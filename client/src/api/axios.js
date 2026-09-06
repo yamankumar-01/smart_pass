@@ -41,7 +41,7 @@ api.interceptors.response.use(
           // Token refresh failed -> Clear tokens
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
-          window.location.reload();
+          localStorage.removeItem('username');
         }
       }
     }

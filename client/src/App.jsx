@@ -10,7 +10,10 @@ import SmtpSettings from './components/SmtpSettings';
 import Login from './components/Login';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return Boolean(localStorage.getItem('accessToken'));
+  });
+  const [showLoginModal, setShowLoginModal] = useState(false);
   
   // Persist active tab across browser reloads
   const validTabs = ['scanner', 'events', 'students', 'dispatch', 'reports', 'emails', 'settings'];
@@ -33,20 +36,23 @@ export default function App() {
   const [selectedEventForStudents, setSelectedEventForStudents] = useState(null);
 
   const setActiveTab = (tab) => {
+    if (!isAuthenticated && tab !== 'scanner') {
+      setShowLoginModal(true);
+      return;
+    }
     setActiveTabState(tab);
     localStorage.setItem('activeTab', tab);
     window.location.hash = tab;
   };
 
   useEffect(() => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      setIsAuthenticated(true);
-    }
-
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
       if (validTabs.includes(hash)) {
+        if (!isAuthenticated && hash !== 'scanner') {
+          setShowLoginModal(true);
+          return;
+        }
         setActiveTabState(hash);
         localStorage.setItem('activeTab', hash);
       }
@@ -54,7 +60,7 @@ export default function App() {
 
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [isAuthenticated]);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
@@ -62,6 +68,13 @@ export default function App() {
     localStorage.removeItem('username');
     localStorage.removeItem('activeTab');
     setIsAuthenticated(false);
+    setActiveTabState('scanner');
+    window.location.hash = 'scanner';
+  };
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+    setShowLoginModal(false);
   };
 
   const handleSelectSessionForScan = (session) => {
@@ -84,23 +97,22 @@ export default function App() {
     setActiveTab('students');
   };
 
-  if (!isAuthenticated) {
-    return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
-  }
-
   return (
     <div className="app-layout">
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        isAuthenticated={isAuthenticated}
+        onOpenLogin={() => setShowLoginModal(true)}
         onLogout={handleLogout}
       />
 
       <main className="main-content">
-        {activeTab === 'scanner' && (
+        {(!isAuthenticated || activeTab === 'scanner') && (
           <Scanner activeSession={activeSession} setActiveSession={setActiveSession} />
         )}
-        {activeTab === 'events' && (
+        
+        {isAuthenticated && activeTab === 'events' && (
           <EventManager
             onSelectSessionForScan={handleSelectSessionForScan}
             onSelectEventForReport={handleSelectEventForReport}
@@ -108,29 +120,43 @@ export default function App() {
             onSelectEventForStudents={handleSelectEventForStudents}
           />
         )}
-        {activeTab === 'students' && (
+        
+        {isAuthenticated && activeTab === 'students' && (
           <StudentManager initialEventFilter={selectedEventForStudents} />
         )}
-        {activeTab === 'dispatch' && (
+        
+        {isAuthenticated && activeTab === 'dispatch' && (
           <QrDispatch
             selectedEventForDispatch={selectedEventForDispatch}
             onNavigateToStudents={handleSelectEventForStudents}
           />
         )}
-        {activeTab === 'reports' && (
+        
+        {isAuthenticated && activeTab === 'reports' && (
           <AttendanceReports
             activeSession={activeSession}
             selectedEventForReport={selectedEventForReport}
             setSelectedEventForReport={setSelectedEventForReport}
           />
         )}
-        {activeTab === 'emails' && (
+        
+        {isAuthenticated && activeTab === 'emails' && (
           <EmailInbox />
         )}
-        {activeTab === 'settings' && (
+        
+        {isAuthenticated && activeTab === 'settings' && (
           <SmtpSettings />
         )}
       </main>
+
+      {/* Admin Login Modal Overlay */}
+      {showLoginModal && (
+        <Login
+          isModal={true}
+          onClose={() => setShowLoginModal(false)}
+          onLoginSuccess={handleLoginSuccess}
+        />
+      )}
     </div>
   );
 }
