@@ -14,7 +14,7 @@ export default function Navbar({ activeTab, setActiveTab, isAuthenticated, onOpe
     { id: 'settings', label: 'SMTP Config', icon: Settings }
   ];
 
-  const adminName = localStorage.getItem('username') || 'admin';
+  const adminName = sessionStorage.getItem('username') || localStorage.getItem('username') || 'admin';
 
   const handleSelectTab = (id) => {
     setActiveTab(id);

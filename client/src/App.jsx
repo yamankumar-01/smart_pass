@@ -11,7 +11,7 @@ import Login from './components/Login';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return Boolean(localStorage.getItem('accessToken'));
+    return Boolean(sessionStorage.getItem('accessToken'));
   });
   const [showLoginModal, setShowLoginModal] = useState(false);
   
@@ -22,7 +22,7 @@ export default function App() {
     if (validTabs.includes(hash)) {
       return hash;
     }
-    const saved = localStorage.getItem('activeTab');
+    const saved = sessionStorage.getItem('activeTab');
     if (saved && validTabs.includes(saved)) {
       return saved;
     }
@@ -41,11 +41,16 @@ export default function App() {
       return;
     }
     setActiveTabState(tab);
-    localStorage.setItem('activeTab', tab);
+    sessionStorage.setItem('activeTab', tab);
     window.location.hash = tab;
   };
 
   useEffect(() => {
+    // Clear any legacy persistent tokens from localStorage
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('username');
+
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
       if (validTabs.includes(hash)) {
@@ -54,7 +59,7 @@ export default function App() {
           return;
         }
         setActiveTabState(hash);
-        localStorage.setItem('activeTab', hash);
+        sessionStorage.setItem('activeTab', hash);
       }
     };
 
@@ -63,6 +68,7 @@ export default function App() {
   }, [isAuthenticated]);
 
   const handleLogout = () => {
+    sessionStorage.clear();
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('username');

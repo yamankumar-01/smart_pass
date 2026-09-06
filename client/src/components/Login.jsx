@@ -21,9 +21,13 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
     try {
       const res = await api.post('/token/', { username: username.trim(), password });
       if (res.data.access) {
-        localStorage.setItem('accessToken', res.data.access);
-        localStorage.setItem('refreshToken', res.data.refresh);
-        localStorage.setItem('username', username.trim());
+        sessionStorage.setItem('accessToken', res.data.access);
+        sessionStorage.setItem('refreshToken', res.data.refresh);
+        sessionStorage.setItem('username', username.trim());
+        // Clean legacy local storage
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('username');
         onLoginSuccess();
       }
     } catch (err) {
