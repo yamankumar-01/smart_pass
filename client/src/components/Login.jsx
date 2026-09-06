@@ -3,22 +3,27 @@ import { QrCode, Lock, User, KeyRound, LogIn, AlertCircle } from 'lucide-react';
 import api from '../api/axios';
 
 export default function Login({ onLoginSuccess }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setError('Please enter both username and password.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const res = await api.post('/token/', { username, password });
+      const res = await api.post('/token/', { username: username.trim(), password });
       if (res.data.access) {
         localStorage.setItem('accessToken', res.data.access);
         localStorage.setItem('refreshToken', res.data.refresh);
-        localStorage.setItem('username', username);
+        localStorage.setItem('username', username.trim());
         onLoginSuccess();
       }
     } catch (err) {
@@ -38,7 +43,7 @@ export default function Login({ onLoginSuccess }) {
           </div>
           <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.5rem', fontWeight: 800 }}>Admin Portal Login</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>
-            Sign in with JWT credentials to access the Attendance Dashboard
+            Sign in with your credentials to access the Attendance Dashboard
           </p>
         </div>
 
@@ -49,9 +54,9 @@ export default function Login({ onLoginSuccess }) {
           </div>
         )}
 
-        <form onSubmit={handleLogin}>
+        <form onSubmit={handleLogin} autoComplete="off">
           <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-            <label>Admin Username</label>
+            <label>Username</label>
             <div style={{ position: 'relative' }}>
               <User size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
@@ -60,8 +65,9 @@ export default function Login({ onLoginSuccess }) {
                 style={{ paddingLeft: '38px' }}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. admin"
+                placeholder="Enter your username"
                 required
+                autoFocus
               />
             </div>
           </div>
@@ -76,21 +82,18 @@ export default function Login({ onLoginSuccess }) {
                 style={{ paddingLeft: '38px' }}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Enter your password"
                 required
               />
             </div>
           </div>
 
-          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px' }} disabled={loading}>
-            <LogIn size={18} /> {loading ? 'Authenticating...' : 'Sign In (JWT)'}
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px', fontWeight: 700 }} disabled={loading}>
+            <LogIn size={18} /> {loading ? 'Authenticating...' : 'Sign In'}
           </button>
         </form>
-
-        <div style={{ marginTop: '1.5rem', textAlign: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-dim)' }}>
-          Default Credentials: <code>admin</code> / <code>admin123</code>
-        </div>
       </div>
     </div>
   );
 }
+

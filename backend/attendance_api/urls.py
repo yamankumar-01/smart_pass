@@ -16,6 +16,7 @@ from .views import (
     export_attendance_csv_view,
     seed_samples_view,
     current_user_view,
+    change_password_view,
     smtp_settings_view,
     test_send_email_view
 )
@@ -31,6 +32,7 @@ urlpatterns = [
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('me/', current_user_view, name='current_user'),
+    path('change-password/', change_password_view, name='change_password'),
 
     # Explicit Section 4 Endpoints
     path('students/upload/', bulk_upload_csv_view, name='students_upload'),

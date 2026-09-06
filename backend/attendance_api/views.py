@@ -23,6 +23,8 @@ from .serializers import (
 )
 from .utils import generate_qr_code, send_student_qr_email, send_event_qr_email, send_batch_event_qr_emails
 
+from django.contrib.auth.models import User
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def current_user_view(request):
@@ -33,6 +35,30 @@ def current_user_view(request):
             'is_staff': request.user.is_staff
         })
     return Response({'username': 'Anonymous', 'is_authenticated': False})
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def change_password_view(request):
+    username = request.data.get('username') or (request.user.username if request.user and request.user.is_authenticated else 'admin')
+    old_password = request.data.get('old_password', '').strip()
+    new_password = request.data.get('new_password', '').strip()
+
+    if not new_password or len(new_password) < 4:
+        return Response({'error': 'New password must be at least 4 characters long.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = User.objects.filter(username=username).first()
+    if not user:
+        user = User.objects.filter(is_superuser=True).first()
+
+    if not user:
+        return Response({'error': 'Admin user not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if old_password and not user.check_password(old_password):
+        return Response({'error': 'Incorrect current password.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.set_password(new_password)
+    user.save()
+    return Response({'message': f'Password for "{user.username}" updated successfully!'})
 
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all().order_by('id')
