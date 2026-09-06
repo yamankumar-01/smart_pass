@@ -12,9 +12,9 @@ python backend/manage.py shell -c "
 from django.contrib.auth.models import User
 import os
 
-username = os.getenv('DJANGO_SUPERUSER_USERNAME', 'admin')
-email = os.getenv('DJANGO_SUPERUSER_EMAIL', 'admin@example.com')
-password = os.getenv('DJANGO_SUPERUSER_PASSWORD', 'admin123')
+username = os.getenv('DJANGO_SUPERUSER_USERNAME', 'smartpass')
+email = os.getenv('DJANGO_SUPERUSER_EMAIL', 'smartpass@example.com')
+password = os.getenv('DJANGO_SUPERUSER_PASSWORD', 'src@2019')
 
 user = User.objects.filter(username=username).first()
 if not user:
