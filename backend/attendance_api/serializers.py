@@ -41,10 +41,13 @@ class AttendanceSessionSerializer(serializers.ModelSerializer):
         return 'ACTIVE' if obj.is_active else 'CLOSED'
 
     def get_present_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'records' in obj._prefetched_objects_cache:
+            return sum(1 for r in obj.records.all() if r.status == 'PRESENT')
         return obj.records.filter(status='PRESENT').count()
 
     def get_total_students(self, obj):
-        return Student.objects.count()
+        # Avoid repeated count queries in serializer loop
+        return getattr(self.context.get('request'), '_cached_student_count', None) or Student.objects.count()
 
 class EventSerializer(serializers.ModelSerializer):
     sessions = AttendanceSessionSerializer(many=True, read_only=True)
@@ -58,12 +61,16 @@ class EventSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
     def get_total_sessions(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'sessions' in obj._prefetched_objects_cache:
+            return len(obj.sessions.all())
         return obj.sessions.count()
 
     def get_total_enrolled(self, obj):
-        return Student.objects.count()
+        return getattr(self.context.get('request'), '_cached_student_count', None) or Student.objects.count()
 
     def get_passes_sent_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'passes' in obj._prefetched_objects_cache:
+            return sum(1 for p in obj.passes.all() if p.qr_sent)
         return obj.passes.filter(qr_sent=True).count()
 
 class AttendanceRecordSerializer(serializers.ModelSerializer):

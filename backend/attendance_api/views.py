@@ -401,7 +401,7 @@ def bulk_send_emails_view(request):
     })
 
 class EventViewSet(viewsets.ModelViewSet):
-    queryset = Event.objects.all().order_by('-id')
+    queryset = Event.objects.all().prefetch_related('sessions__records', 'passes').order_by('-id')
     serializer_class = EventSerializer
     permission_classes = [AllowAny]
 
@@ -447,32 +447,39 @@ class EventViewSet(viewsets.ModelViewSet):
         matrix_rows = []
         for st in students:
             p_set = student_present_map.get(st.id, set())
-            present_days = 0
-            st_attendance = {}
-            for sid in session_ids:
-                is_p = sid in p_set
-                st_attendance[str(sid)] = 'PRESENT' if is_p else 'ABSENT'
-                if is_p:
-                    present_days += 1
-
+            present_days = len(p_set)
             total_days = len(session_ids)
             pct = round((present_days / total_days) * 100) if total_days > 0 else 0
+
+            att_map = {}
+            for sid in session_ids:
+                att_map[sid] = 'PRESENT' if sid in p_set else 'ABSENT'
+
             matrix_rows.append({
-                'student': StudentSerializer(st).data,
-                'attendance': st_attendance,
+                'student': {
+                    'id': st.id,
+                    'name': st.name,
+                    'email': st.email,
+                    'branch': st.branch,
+                    'year': st.year,
+                    'section': st.section
+                },
+                'attendance': att_map,
                 'total_present': present_days,
                 'total_days': total_days,
                 'percentage': pct
             })
 
         return Response({
-            'event': EventSerializer(event_obj).data,
+            'event': {
+                'id': event_obj.id,
+                'title': event_obj.title,
+                'description': event_obj.description,
+                'start_date': event_obj.start_date,
+                'end_date': event_obj.end_date
+            },
             'sessions': session_list,
-            'matrix': matrix_rows,
-            'stats': {
-                'total_students': students.count(),
-                'total_sessions': len(session_list),
-            }
+            'matrix': matrix_rows
         })
 
     @action(detail=True, methods=['get'], url_path='export-csv')
@@ -526,17 +533,16 @@ class EventViewSet(viewsets.ModelViewSet):
         student_present_set = {(r.student_id, r.session_id) for r in records}
 
         html_content = f"""
-        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <html>
         <head>
           <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-          <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Attendance Matrix</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
           <style>
-            table {{ border-collapse: collapse; font-family: Calibri, Arial, sans-serif; }}
-            th {{ background-color: #4f46e5; color: #ffffff; font-weight: bold; border: 1px solid #312e81; padding: 8px 12px; text-align: center; }}
-            td {{ border: 1px solid #cbd5e1; padding: 6px 10px; text-align: left; }}
-            .present {{ background-color: #dcfce7; color: #166534; font-weight: bold; text-align: center; }}
-            .absent {{ background-color: #fee2e2; color: #991b1b; text-align: center; }}
-            .title-cell {{ font-size: 16pt; font-weight: bold; color: #1e1b4b; padding: 10px 0; }}
+            table {{ border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; }}
+            th, td {{ border: 1px solid #cbd5e1; padding: 8px 12px; font-size: 13px; }}
+            th {{ background-color: #0f172a; color: #ffffff; text-align: left; }}
+            .present {{ color: #16a34a; font-weight: bold; background-color: #dcfce7; text-align: center; }}
+            .absent {{ color: #dc2626; font-weight: bold; background-color: #fee2e2; text-align: center; }}
+            .title-cell {{ font-size: 16px; font-weight: bold; background-color: #4f46e5; color: white; padding: 12px; }}
           </style>
         </head>
         <body>
@@ -620,11 +626,17 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='passes')
     def passes_list(self, request, pk=None):
         event_obj = self.get_object()
-        students = Student.objects.all()
-        existing_st_ids = set(event_obj.passes.values_list('student_id', flat=True))
-        to_create = [EventPass(event=event_obj, student=st) for st in students if st.id not in existing_st_ids]
-        if to_create:
-            EventPass.objects.bulk_create(to_create)
+        total_students = Student.objects.count()
+        current_passes_count = event_obj.passes.count()
+        
+        # Only perform auto-generation if new students were added since last pass generation
+        if current_passes_count < total_students:
+            students = Student.objects.all()
+            existing_st_ids = set(event_obj.passes.values_list('student_id', flat=True))
+            to_create = [EventPass(event=event_obj, student=st) for st in students if st.id not in existing_st_ids]
+            if to_create:
+                EventPass.objects.bulk_create(to_create)
+
         passes = event_obj.passes.all().select_related('student', 'event').order_by('student__name')
         return Response(EventPassSerializer(passes, many=True).data)
 
@@ -643,7 +655,7 @@ class EventViewSet(viewsets.ModelViewSet):
         })
 
 class AttendanceSessionViewSet(viewsets.ModelViewSet):
-    queryset = AttendanceSession.objects.filter(event__isnull=False).select_related('event').order_by('event_id', 'date', 'id')
+    queryset = AttendanceSession.objects.filter(event__isnull=False).select_related('event').prefetch_related('records').order_by('event_id', 'date', 'id')
     serializer_class = AttendanceSessionSerializer
     permission_classes = [AllowAny]
 
