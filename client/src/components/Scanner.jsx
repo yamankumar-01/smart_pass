@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
-import { Camera, CheckCircle2, AlertTriangle, XCircle, Users, Keyboard, Sparkles } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { Camera, CameraOff, Play, Square, RefreshCw, UploadCloud, CheckCircle2, AlertTriangle, XCircle, Users, Keyboard, Sparkles } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import api from '../api/axios';
 
@@ -47,8 +47,13 @@ export default function Scanner({ activeSession, setActiveSession }) {
   const [manualToken, setManualToken] = useState('');
   const [sessionStats, setSessionStats] = useState({ present: 0, total: 0 });
   const [loading, setLoading] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState('environment'); // 'environment' (back) or 'user' (front)
+  const [cameraError, setCameraError] = useState(null);
+  const [isStartingCamera, setIsStartingCamera] = useState(false);
 
-  const html5QrcodeScannerRef = useRef(null);
+  const qrCodeInstanceRef = useRef(null);
+  const fileInputRef = useRef(null);
   const lastScannedTokenRef = useRef(null);
   const lastScannedTimeRef = useRef(0);
 
@@ -91,56 +96,142 @@ export default function Scanner({ activeSession, setActiveSession }) {
     }
   }, [activeSession]);
 
-  // Initialize Html5QrcodeScanner
-  useEffect(() => {
-    let isMounted = true;
-
-    const timer = setTimeout(() => {
-      const readerElem = document.getElementById('qr-reader');
-      if (!readerElem) return;
-
-      if (!html5QrcodeScannerRef.current) {
-        const scanner = new Html5QrcodeScanner(
-          'qr-reader',
-          {
-            fps: 10,
-            qrbox: { width: 260, height: 260 },
-            aspectRatio: 1.0,
-            showTorchButtonIfSupported: true,
-            showZoomSliderIfSupported: true,
-            rememberLastUsedCamera: true
-          },
-          false
-        );
-
-        scanner.render(
-          (decodedText) => {
-            if (isMounted) {
-              handleScanSuccess(decodedText);
-            }
-          },
-          (errorMessage) => {
-            // Ignore ongoing scan frame misses
-          }
-        );
-
-        html5QrcodeScannerRef.current = scanner;
+  // Helper to stop scanner
+  const stopScanner = async () => {
+    if (qrCodeInstanceRef.current) {
+      try {
+        if (qrCodeInstanceRef.current.isScanning) {
+          await qrCodeInstanceRef.current.stop();
+        }
+      } catch (err) {
+        console.warn('Error stopping scanner:', err);
       }
-    }, 200);
+      setIsScanning(false);
+    }
+  };
+
+  // Helper to start scanner
+  const startScanner = async (facing = cameraFacing) => {
+    setCameraError(null);
+    setIsStartingCamera(true);
+
+    try {
+      const readerElem = document.getElementById('qr-reader');
+      if (!readerElem) {
+        setIsStartingCamera(false);
+        return;
+      }
+
+      // If instance doesn't exist, create it
+      if (!qrCodeInstanceRef.current) {
+        qrCodeInstanceRef.current = new Html5Qrcode('qr-reader');
+      } else if (qrCodeInstanceRef.current.isScanning) {
+        await qrCodeInstanceRef.current.stop();
+      }
+
+      const qrConfig = {
+        fps: 15,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const edge = Math.min(viewfinderWidth, viewfinderHeight);
+          const size = Math.floor(edge * 0.75);
+          return { width: Math.max(180, Math.min(280, size)), height: Math.max(180, Math.min(280, size)) };
+        },
+        aspectRatio: 1.0
+      };
+
+      await qrCodeInstanceRef.current.start(
+        { facingMode: facing },
+        qrConfig,
+        (decodedText) => {
+          handleScanSuccess(decodedText);
+        },
+        () => {
+          // Ignore individual frame non-matches
+        }
+      );
+
+      setIsScanning(true);
+      setCameraFacing(facing);
+    } catch (err) {
+      console.error('Failed to start camera:', err);
+      let errorMsg = 'Could not access camera. Please allow camera permissions in your browser.';
+      if (err?.name === 'NotAllowedError' || String(err).includes('Permission')) {
+        errorMsg = 'Camera permission was denied. Please allow camera access in browser settings.';
+      } else if (err?.name === 'NotFoundError' || String(err).includes('NotFound')) {
+        errorMsg = 'No suitable camera found on this device.';
+      }
+      setCameraError(errorMsg);
+      setIsScanning(false);
+    } finally {
+      setIsStartingCamera(false);
+    }
+  };
+
+  // Toggle front/back camera
+  const toggleCameraFacing = async () => {
+    const nextFacing = cameraFacing === 'environment' ? 'user' : 'environment';
+    if (isScanning) {
+      await stopScanner();
+      await startScanner(nextFacing);
+    } else {
+      setCameraFacing(nextFacing);
+    }
+  };
+
+  // Scan from uploaded photo file
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      if (!qrCodeInstanceRef.current) {
+        qrCodeInstanceRef.current = new Html5Qrcode('qr-reader');
+      }
+
+      // If camera is currently streaming, pause it
+      if (isScanning && qrCodeInstanceRef.current.isScanning) {
+        await qrCodeInstanceRef.current.stop();
+        setIsScanning(false);
+      }
+
+      const decodedText = await qrCodeInstanceRef.current.scanFile(file, true);
+      handleScanSuccess(decodedText);
+    } catch (err) {
+      console.error('File scan error:', err);
+      setScanResult({
+        type: 'error',
+        status_label: '❌ No QR Code Found',
+        message: 'Could not detect a valid QR code in the uploaded image. Please try another photo.'
+      });
+      playSound('error');
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Start scanner automatically on mount if desired
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      startScanner('environment');
+    }, 300);
 
     return () => {
-      isMounted = false;
       clearTimeout(timer);
-      if (html5QrcodeScannerRef.current) {
+      if (qrCodeInstanceRef.current) {
         try {
-          html5QrcodeScannerRef.current.clear().catch(console.error);
+          if (qrCodeInstanceRef.current.isScanning) {
+            qrCodeInstanceRef.current.stop().catch(console.warn);
+          }
+          qrCodeInstanceRef.current.clear();
         } catch (e) {
-          console.error('Error clearing QR scanner:', e);
+          console.warn('Scanner cleanup error:', e);
         }
-        html5QrcodeScannerRef.current = null;
+        qrCodeInstanceRef.current = null;
       }
     };
-  }, [activeSession]);
+  }, []);
 
   const handleScanSuccess = (token) => {
     const now = Date.now();
@@ -239,14 +330,14 @@ export default function Scanner({ activeSession, setActiveSession }) {
       {/* Session Selection & Live Counter Banner */}
       <div className="card" style={{ marginBottom: '1.25rem', padding: '1.25rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-          <div>
+          <div style={{ flex: '1 1 280px' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>
               Active Lecture / Event Day
             </span>
             <div style={{ marginTop: '4px' }}>
               <select
                 className="form-select"
-                style={{ width: 'auto', minWidth: '320px', fontWeight: 600 }}
+                style={{ width: '100%', fontWeight: 600 }}
                 value={activeSession ? activeSession.id : ''}
                 onChange={(e) => {
                   const selected = sessions.find(s => s.id === parseInt(e.target.value));
@@ -290,21 +381,22 @@ export default function Scanner({ activeSession, setActiveSession }) {
             style={{
               background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.25))',
               border: '1.5px solid rgba(16, 185, 129, 0.4)',
-              padding: '10px 20px',
+              padding: '10px 18px',
               borderRadius: '12px',
               display: 'flex',
               alignItems: 'center',
-              gap: '14px'
+              gap: '14px',
+              flex: '0 0 auto'
             }}
           >
-            <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+            <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', shrink: 0 }}>
               <Users size={22} />
             </div>
             <div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
                 Present Students
               </div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--success)', lineHeight: 1.1 }}>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success)', lineHeight: 1.1 }}>
                 {sessionStats.present} <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-muted)' }}>/ {sessionStats.total}</span>
               </div>
             </div>
@@ -319,13 +411,170 @@ export default function Scanner({ activeSession, setActiveSession }) {
             <Camera size={20} color="var(--primary)" />
             <span>Live Camera QR Scanner</span>
           </div>
-          <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            ● Camera Active
-          </span>
+          {isScanning ? (
+            <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <span className="live-dot"></span> Camera Active
+            </span>
+          ) : (
+            <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <CameraOff size={13} /> Camera Stopped
+            </span>
+          )}
         </div>
 
-        <div className="scanner-container" style={{ padding: '0.5rem 0' }}>
-          <div id="qr-reader" style={{ width: '100%', maxWidth: '420px', margin: '0 auto', borderRadius: '12px', overflow: 'hidden' }}></div>
+        {/* Viewfinder Area */}
+        <div className="scanner-container" style={{ padding: '0.5rem 0', position: 'relative', minHeight: '320px' }}>
+          <div
+            id="qr-reader"
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              margin: '0 auto',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              display: isScanning ? 'block' : 'none'
+            }}
+          ></div>
+
+          {/* Standby Placeholder when camera is stopped */}
+          {!isScanning && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '2.5rem 1.5rem',
+                textAlign: 'center',
+                color: 'var(--text-muted)'
+              }}
+            >
+              <div
+                style={{
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '50%',
+                  background: 'rgba(99, 102, 241, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '1rem',
+                  color: 'var(--primary)'
+                }}
+              >
+                <Camera size={32} />
+              </div>
+              <h3 style={{ color: 'var(--text-main)', fontSize: '1.1rem', marginBottom: '6px' }}>
+                Camera Scanner is Paused
+              </h3>
+              <p style={{ fontSize: '0.85rem', maxWidth: '320px', marginBottom: '1.25rem' }}>
+                Click <strong>"Start Scan"</strong> below to open camera or upload a QR image file directly.
+              </p>
+              <button
+                className="btn btn-primary"
+                onClick={() => startScanner(cameraFacing)}
+                disabled={isStartingCamera}
+                style={{ minWidth: '180px' }}
+              >
+                <Play size={16} /> {isStartingCamera ? 'Opening Camera...' : 'Start Camera Scanner'}
+              </button>
+            </div>
+          )}
+
+          {/* Error Message if permission denied */}
+          {cameraError && (
+            <div
+              style={{
+                margin: '1rem',
+                padding: '12px 16px',
+                background: 'var(--danger-bg)',
+                border: '1px solid var(--danger-border)',
+                borderRadius: '8px',
+                color: '#f87171',
+                fontSize: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <AlertTriangle size={18} style={{ shrink: 0 }} />
+              <span>{cameraError}</span>
+            </div>
+          )}
+        </div>
+
+        {/* SCANNER CONTROL BUTTONS BAR (Scan / Stop / Switch / Upload) */}
+        <div
+          className="scanner-controls-bar"
+          style={{
+            marginTop: '1rem',
+            padding: '1rem',
+            background: 'rgba(15, 23, 42, 0.6)',
+            borderRadius: '10px',
+            border: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '10px',
+            flexWrap: 'wrap'
+          }}
+        >
+          {/* Start Scan Button */}
+          <button
+            type="button"
+            className={`btn ${isScanning ? 'btn-secondary' : 'btn-success'}`}
+            onClick={() => startScanner(cameraFacing)}
+            disabled={isScanning || isStartingCamera}
+            style={{ flex: '1 1 140px', minWidth: '130px', fontWeight: 700 }}
+          >
+            <Play size={16} />
+            <span>{isStartingCamera ? 'Starting...' : '▶ Start Scan'}</span>
+          </button>
+
+          {/* Stop Camera Button */}
+          <button
+            type="button"
+            className={`btn ${isScanning ? 'btn-danger' : 'btn-secondary'}`}
+            onClick={stopScanner}
+            disabled={!isScanning}
+            style={{ flex: '1 1 140px', minWidth: '130px', fontWeight: 700 }}
+          >
+            <Square size={16} />
+            <span>⏹ Stop Camera</span>
+          </button>
+
+          {/* Switch Front/Back Camera (Mobile Friendly) */}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={toggleCameraFacing}
+            title="Switch between Front and Back Camera"
+            style={{ flex: '0 1 auto', padding: '10px 14px' }}
+          >
+            <RefreshCw size={16} />
+            <span className="btn-label-responsive">
+              {cameraFacing === 'environment' ? 'Back Cam' : 'Front Cam'}
+            </span>
+          </button>
+
+          {/* Upload QR Image File Scan */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            onChange={handleFileUpload}
+            style={{ display: 'none' }}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => fileInputRef.current?.click()}
+            title="Scan QR code from an image or screenshot file"
+            style={{ flex: '0 1 auto', padding: '10px 14px' }}
+          >
+            <UploadCloud size={16} />
+            <span className="btn-label-responsive">Scan Photo</span>
+          </button>
         </div>
 
         {/* Scan Result Feedback Card */}
@@ -353,16 +602,16 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
         {/* Manual UUID Input Fallback */}
         <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-          <form onSubmit={handleManualSubmit} style={{ display: 'flex', gap: '8px' }}>
+          <form onSubmit={handleManualSubmit} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <input
               type="text"
               className="form-input"
               placeholder="Or type/paste Student Token UUID..."
               value={manualToken}
               onChange={(e) => setManualToken(e.target.value)}
-              style={{ fontSize: '0.85rem' }}
+              style={{ fontSize: '0.85rem', flex: '1 1 220px' }}
             />
-            <button type="submit" className="btn btn-secondary" disabled={loading} style={{ whiteSpace: 'nowrap' }}>
+            <button type="submit" className="btn btn-secondary" disabled={loading} style={{ whiteSpace: 'nowrap', flex: '0 0 auto' }}>
               <Keyboard size={15} /> Verify Token
             </button>
           </form>
@@ -371,3 +620,4 @@ export default function Scanner({ activeSession, setActiveSession }) {
     </div>
   );
 }
+
