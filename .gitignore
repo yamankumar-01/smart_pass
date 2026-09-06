@@ -15,6 +15,8 @@ ENV/
 # Node & Frontend
 client/node_modules/
 client/dist/
+client/.vite/
+.vite/
 .npm
 *.log
 
