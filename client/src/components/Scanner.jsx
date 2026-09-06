@@ -42,7 +42,8 @@ function playSound(type) {
 }
 
 export default function Scanner({ activeSession, setActiveSession }) {
-  const [sessions, setSessions] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [selectedEventId, setSelectedEventId] = useState('');
   const [scanResult, setScanResult] = useState(null);
   const [manualToken, setManualToken] = useState('');
   const [sessionStats, setSessionStats] = useState({ present: 0, total: 0 });
@@ -57,22 +58,40 @@ export default function Scanner({ activeSession, setActiveSession }) {
   const lastScannedTokenRef = useRef(null);
   const lastScannedTimeRef = useRef(0);
 
-  const loadSessions = async () => {
+  const loadEventsAndSessions = async () => {
     try {
-      const res = await api.get('/sessions/');
-      setSessions(res.data);
+      const res = await api.get('/events/');
+      const eventList = res.data || [];
+      setEvents(eventList);
 
-      if (res.data.length > 0 && !activeSession) {
-        const active = res.data.find(s => s.is_active || s.status === 'ACTIVE') || res.data[0];
-        setActiveSession(active);
+      if (eventList.length > 0) {
+        let initialEvent = eventList[0];
+        if (activeSession && activeSession.event) {
+          const match = eventList.find(e => e.id === activeSession.event || e.id === activeSession.event_id);
+          if (match) initialEvent = match;
+        }
+
+        setSelectedEventId(String(initialEvent.id));
+
+        if (initialEvent.sessions && initialEvent.sessions.length > 0) {
+          if (!activeSession || (activeSession.event && activeSession.event !== initialEvent.id)) {
+            const activeSess = initialEvent.sessions.find(s => s.is_active || s.status === 'ACTIVE') || initialEvent.sessions[0];
+            setActiveSession(activeSess);
+          }
+        } else {
+          setActiveSession(null);
+        }
       }
     } catch (err) {
-      console.error('Failed to load sessions:', err);
+      console.error('Failed to load events:', err);
     }
   };
 
   const loadSessionStats = async (sessionId) => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setSessionStats({ present: 0, total: 0 });
+      return;
+    }
     try {
       const res = await api.get(`/attendance/session/${sessionId}/`);
       if (res.data.stats) {
@@ -87,12 +106,14 @@ export default function Scanner({ activeSession, setActiveSession }) {
   };
 
   useEffect(() => {
-    loadSessions();
+    loadEventsAndSessions();
   }, []);
 
   useEffect(() => {
     if (activeSession) {
       loadSessionStats(activeSession.id);
+    } else {
+      setSessionStats({ present: 0, total: 0 });
     }
   }, [activeSession]);
 
@@ -325,55 +346,89 @@ export default function Scanner({ activeSession, setActiveSession }) {
     }
   };
 
+  const currentEvent = events.find(e => String(e.id) === String(selectedEventId)) || (events.length > 0 ? events[0] : null);
+  const availableDays = currentEvent?.sessions || [];
+
   return (
     <div className="scanner-page" style={{ maxWidth: '850px', margin: '0 auto' }}>
       {/* Session Selection & Live Counter Banner */}
       <div className="card" style={{ marginBottom: '1.25rem', padding: '1.25rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-          <div style={{ flex: '1 1 280px' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>
-              Active Lecture / Event Day
-            </span>
-            <div style={{ marginTop: '4px' }}>
-              <select
-                className="form-select"
-                style={{ width: '100%', fontWeight: 600 }}
-                value={activeSession ? activeSession.id : ''}
-                onChange={(e) => {
-                  const selected = sessions.find(s => s.id === parseInt(e.target.value));
-                  setActiveSession(selected);
-                  setScanResult(null);
-                }}
-              >
-                {(() => {
-                  const eventSessions = sessions.filter(s => s.event && s.event_title);
-                  if (eventSessions.length === 0) {
-                    return <option value="">No event lecture days added yet (Add in "Events & Days")</option>;
-                  }
-                  const grouped = eventSessions.reduce((acc, s) => {
-                    const groupName = s.event_title;
-                    if (!acc[groupName]) acc[groupName] = [];
-                    acc[groupName].push(s);
-                    return acc;
-                  }, {});
-
-                  return Object.entries(grouped).map(([groupName, groupList]) => (
-                    <optgroup key={groupName} label={`📌 Event: ${groupName}`}>
-                      {groupList.map(s => {
-                        const isClosed = !s.is_active || s.status === 'CLOSED';
-                        const prefix = s.day_label ? `${s.day_label} - ` : '';
-                        const name = s.topic || s.title || s.name || 'Lecture Session';
-                        return (
-                          <option key={s.id} value={s.id}>
-                            {prefix}{name} ({s.date}) {isClosed ? '🔒 [CLOSED]' : '⚡ [ACTIVE]'}
-                          </option>
-                        );
-                      })}
-                    </optgroup>
-                  ));
-                })()}
-              </select>
+          
+          {/* Two-Step Selector: Event First, then Day */}
+          <div style={{ flex: '1 1 340px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '12px' }}>
+            
+            {/* STEP 1: SELECT EVENT */}
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                🎯 Step 1: Select Event
+              </span>
+              <div style={{ marginTop: '4px' }}>
+                <select
+                  className="form-select"
+                  style={{ width: '100%', fontWeight: 600, fontSize: '0.88rem' }}
+                  value={selectedEventId}
+                  onChange={(e) => {
+                    const newEventId = e.target.value;
+                    setSelectedEventId(newEventId);
+                    const ev = events.find(ev => String(ev.id) === String(newEventId));
+                    if (ev && ev.sessions && ev.sessions.length > 0) {
+                      const activeSess = ev.sessions.find(s => s.is_active || s.status === 'ACTIVE') || ev.sessions[0];
+                      setActiveSession(activeSess);
+                    } else {
+                      setActiveSession(null);
+                    }
+                    setScanResult(null);
+                  }}
+                >
+                  {events.length === 0 ? (
+                    <option value="">No events created yet (Add in "Events & Days")</option>
+                  ) : (
+                    events.map(ev => (
+                      <option key={ev.id} value={ev.id}>
+                        {ev.title} ({ev.sessions?.length || 0} Days)
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
             </div>
+
+            {/* STEP 2: SELECT DAY */}
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                📅 Step 2: Select Lecture Day
+              </span>
+              <div style={{ marginTop: '4px' }}>
+                <select
+                  className="form-select"
+                  style={{ width: '100%', fontWeight: 600, fontSize: '0.88rem' }}
+                  value={activeSession ? activeSession.id : ''}
+                  onChange={(e) => {
+                    const selected = availableDays.find(s => s.id === parseInt(e.target.value));
+                    setActiveSession(selected);
+                    setScanResult(null);
+                  }}
+                  disabled={availableDays.length === 0}
+                >
+                  {availableDays.length === 0 ? (
+                    <option value="">No days added yet (Add in "Events & Days")</option>
+                  ) : (
+                    availableDays.map(s => {
+                      const isClosed = !s.is_active || s.status === 'CLOSED';
+                      const prefix = s.day_label ? `${s.day_label} - ` : '';
+                      const name = s.topic || s.title || s.name || 'Lecture Day';
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {prefix}{name} ({s.date}) {isClosed ? '🔒 [CLOSED]' : '⚡ [ACTIVE]'}
+                        </option>
+                      );
+                    })
+                  )}
+                </select>
+              </div>
+            </div>
+
           </div>
 
           {/* Prominent Present Student Counter */}
