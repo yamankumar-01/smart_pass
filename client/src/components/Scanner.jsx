@@ -232,14 +232,9 @@ export default function Scanner({ activeSession, setActiveSession }) {
     }
   };
 
-  // Start scanner automatically on mount if desired
+  // Cleanup camera stream on component unmount
   useEffect(() => {
-    const timer = setTimeout(() => {
-      startScanner('environment');
-    }, 300);
-
     return () => {
-      clearTimeout(timer);
       if (qrCodeInstanceRef.current) {
         try {
           if (qrCodeInstanceRef.current.isScanning) {
