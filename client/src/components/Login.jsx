@@ -117,7 +117,7 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
               style={{ paddingLeft: '38px', width: '100%' }}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="smartpass / adminpass"
+              placeholder="Username"
               required
               autoFocus
             />
@@ -134,7 +134,7 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
               style={{ paddingLeft: '38px', width: '100%' }}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
+              placeholder="Password"
               required
             />
           </div>
