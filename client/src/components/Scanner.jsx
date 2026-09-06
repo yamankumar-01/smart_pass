@@ -503,78 +503,62 @@ export default function Scanner({ activeSession, setActiveSession }) {
           )}
         </div>
 
-        {/* SCANNER CONTROL BUTTONS BAR (Scan / Stop / Switch / Upload) */}
+        {/* UNIFIED SINGLE START / CLOSE TOGGLE BUTTON */}
         <div
           className="scanner-controls-bar"
           style={{
             marginTop: '1rem',
-            padding: '1rem',
+            padding: '0.85rem',
             background: 'rgba(15, 23, 42, 0.6)',
             borderRadius: '10px',
             border: '1px solid var(--border)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            flexWrap: 'wrap'
+            justifyContent: 'center'
           }}
         >
-          {/* Start Scan Button */}
-          <button
-            type="button"
-            className={`btn ${isScanning ? 'btn-secondary' : 'btn-success'}`}
-            onClick={() => startScanner(cameraFacing)}
-            disabled={isScanning || isStartingCamera}
-            style={{ flex: '1 1 140px', minWidth: '130px', fontWeight: 700 }}
-          >
-            <Play size={16} />
-            <span>{isStartingCamera ? 'Starting...' : '▶ Start Scan'}</span>
-          </button>
-
-          {/* Stop Camera Button */}
-          <button
-            type="button"
-            className={`btn ${isScanning ? 'btn-danger' : 'btn-secondary'}`}
-            onClick={stopScanner}
-            disabled={!isScanning}
-            style={{ flex: '1 1 140px', minWidth: '130px', fontWeight: 700 }}
-          >
-            <Square size={16} />
-            <span>⏹ Stop Camera</span>
-          </button>
-
-          {/* Switch Front/Back Camera (Mobile Friendly) */}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={toggleCameraFacing}
-            title="Switch between Front and Back Camera"
-            style={{ flex: '0 1 auto', padding: '10px 14px' }}
-          >
-            <RefreshCw size={16} />
-            <span className="btn-label-responsive">
-              {cameraFacing === 'environment' ? 'Back Cam' : 'Front Cam'}
-            </span>
-          </button>
-
-          {/* Upload QR Image File Scan */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            onChange={handleFileUpload}
-            style={{ display: 'none' }}
-          />
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => fileInputRef.current?.click()}
-            title="Scan QR code from an image or screenshot file"
-            style={{ flex: '0 1 auto', padding: '10px 14px' }}
-          >
-            <UploadCloud size={16} />
-            <span className="btn-label-responsive">Scan Photo</span>
-          </button>
+          {isScanning ? (
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={stopScanner}
+              style={{
+                width: '100%',
+                maxWidth: '340px',
+                padding: '12px 20px',
+                fontSize: '1rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              <Square size={18} />
+              <span>⏹ Close / Stop Scanner</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-success"
+              onClick={() => startScanner(cameraFacing)}
+              disabled={isStartingCamera}
+              style={{
+                width: '100%',
+                maxWidth: '340px',
+                padding: '12px 20px',
+                fontSize: '1rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              <Play size={18} />
+              <span>{isStartingCamera ? 'Opening Camera...' : '▶ Start Scanner'}</span>
+            </button>
+          )}
         </div>
 
         {/* Scan Result Feedback Card */}
