@@ -11,8 +11,9 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const cleanUser = username.trim().toLowerCase();
-    if (!cleanUser || !password.trim()) {
+    const cleanUser = username.trim();
+    const cleanPass = password.trim();
+    if (!cleanUser || !cleanPass) {
       setError('Please enter both username and password.');
       return;
     }
@@ -21,25 +22,14 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
     setError(null);
 
     try {
-      const res = await api.post('/token/', { username: cleanUser, password });
+      const res = await api.post('/token/', { username: cleanUser, password: cleanPass });
       if (res.data.access) {
+        const userRole = res.data.role || (cleanUser.toLowerCase() === 'adminpass' || cleanUser.toLowerCase() === 'admin' ? 'admin' : 'volunteer');
+        const finalUsername = res.data.username || cleanUser;
+
         sessionStorage.setItem('accessToken', res.data.access);
         sessionStorage.setItem('refreshToken', res.data.refresh);
-        sessionStorage.setItem('username', cleanUser);
-        
-        // Determine role based on username or current-user API
-        let userRole = cleanUser === 'adminpass' || cleanUser === 'admin' ? 'admin' : 'volunteer';
-        try {
-          const userRes = await api.get('/current-user/', {
-            headers: { Authorization: `Bearer ${res.data.access}` }
-          });
-          if (userRes.data && userRes.data.role) {
-            userRole = userRes.data.role;
-          }
-        } catch (uErr) {
-          console.warn('Could not fetch user role, defaulting from username:', uErr);
-        }
-
+        sessionStorage.setItem('username', finalUsername);
         sessionStorage.setItem('role', userRole);
 
         // Clean legacy local storage
@@ -161,7 +151,7 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
           {isModal && (
             <button
               type="button"
@@ -182,31 +172,6 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
           </button>
         </div>
       </form>
-
-      {/* Role Quick Selector / Info */}
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', marginBottom: '4px' }}>
-          Click below for quick role auto-fill:
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => fillCredentials('smartpass', 'src@2019')}
-            style={{ fontSize: '0.78rem', justifyContent: 'center', padding: '6px 8px' }}
-          >
-            <Users size={13} color="var(--primary)" /> Volunteer Mode
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => fillCredentials('adminpass', 'src@2019')}
-            style={{ fontSize: '0.78rem', justifyContent: 'center', padding: '6px 8px' }}
-          >
-            <Shield size={13} color="var(--success)" /> Super Admin
-          </button>
-        </div>
-      </div>
     </div>
   );
 
