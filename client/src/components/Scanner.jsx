@@ -254,18 +254,20 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   setScanResult(null);
                 }}
               >
-                {sessions.length === 0 ? (
-                  <option value="">No lecture sessions available</option>
-                ) : (
-                  Object.entries(
-                    sessions.reduce((acc, s) => {
-                      const groupName = s.event_title ? `Event: ${s.event_title}` : 'Standalone Lectures';
-                      if (!acc[groupName]) acc[groupName] = [];
-                      acc[groupName].push(s);
-                      return acc;
-                    }, {})
-                  ).map(([groupName, groupList]) => (
-                    <optgroup key={groupName} label={`📌 ${groupName}`}>
+                {(() => {
+                  const eventSessions = sessions.filter(s => s.event && s.event_title);
+                  if (eventSessions.length === 0) {
+                    return <option value="">No event lecture days added yet (Add in "Events & Days")</option>;
+                  }
+                  const grouped = eventSessions.reduce((acc, s) => {
+                    const groupName = s.event_title;
+                    if (!acc[groupName]) acc[groupName] = [];
+                    acc[groupName].push(s);
+                    return acc;
+                  }, {});
+
+                  return Object.entries(grouped).map(([groupName, groupList]) => (
+                    <optgroup key={groupName} label={`📌 Event: ${groupName}`}>
                       {groupList.map(s => {
                         const isClosed = !s.is_active || s.status === 'CLOSED';
                         const prefix = s.day_label ? `${s.day_label} - ` : '';
@@ -277,8 +279,8 @@ export default function Scanner({ activeSession, setActiveSession }) {
                         );
                       })}
                     </optgroup>
-                  ))
-                )}
+                  ));
+                })()}
               </select>
             </div>
           </div>

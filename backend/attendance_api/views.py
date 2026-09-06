@@ -643,7 +643,7 @@ class EventViewSet(viewsets.ModelViewSet):
         })
 
 class AttendanceSessionViewSet(viewsets.ModelViewSet):
-    queryset = AttendanceSession.objects.all().order_by('-id')
+    queryset = AttendanceSession.objects.filter(event__isnull=False).select_related('event').order_by('event_id', 'date', 'id')
     serializer_class = AttendanceSessionSerializer
     permission_classes = [AllowAny]
 
