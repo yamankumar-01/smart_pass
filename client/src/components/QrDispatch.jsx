@@ -168,13 +168,13 @@ export default function QrDispatch({ selectedEventForDispatch }) {
       {/* Event Selection Card */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <label style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)' }}>
-              🎯 Target Event / Workshop:
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: '1 1 280px' }}>
+            <label style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+              🎯 Target Event:
             </label>
             <select
               className="form-select"
-              style={{ width: 'auto', minWidth: '320px', fontWeight: 600 }}
+              style={{ flex: '1 1 220px', minWidth: '180px', fontWeight: 600 }}
               value={selectedEventId}
               onChange={(e) => {
                 setSelectedEventId(e.target.value);

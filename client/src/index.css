@@ -798,7 +798,7 @@ body {
   }
 
   .main-content {
-    padding: 1.25rem 0.85rem;
+    padding: 1.25rem 0.75rem;
   }
 
   .page-header {
@@ -809,7 +809,12 @@ body {
   }
 
   .page-title h2 {
-    font-size: 1.4rem;
+    font-size: 1.35rem;
+    line-height: 1.25;
+  }
+
+  .page-title p {
+    font-size: 0.85rem;
   }
 
   .grid-2 {
@@ -823,37 +828,46 @@ body {
   }
 
   .stat-card {
-    padding: 1rem;
+    padding: 0.9rem;
     gap: 10px;
   }
 
   .stat-icon {
-    width: 40px;
-    height: 40px;
-    font-size: 1.2rem;
+    width: 38px;
+    height: 38px;
+    font-size: 1.1rem;
+  }
+
+  .stat-info h4 {
+    font-size: 0.7rem;
   }
 
   .stat-info .value {
-    font-size: 1.35rem;
+    font-size: 1.3rem;
   }
 
   .card {
-    padding: 1.15rem;
+    padding: 1rem;
+    border-radius: var(--radius-sm);
   }
 
   .card-header {
-    margin-bottom: 1rem;
-    padding-bottom: 0.75rem;
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.65rem;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .card-title {
-    font-size: 1.05rem;
+    font-size: 1rem;
   }
 
-  .modal-content {
-    width: 95vw;
-    max-height: 88vh;
-    padding: 1.25rem 1rem;
+  .modal-content,
+  .modal-card {
+    width: 95vw !important;
+    max-height: 88vh !important;
+    padding: 1.25rem 0.9rem !important;
+    border-radius: var(--radius-md) !important;
   }
 
   .scanner-controls-bar {
@@ -868,12 +882,31 @@ body {
   .table-container {
     -webkit-overflow-scrolling: touch;
     border-radius: var(--radius-sm);
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .data-table {
+    min-width: 620px;
   }
 
   .data-table th,
   .data-table td {
-    padding: 10px 12px;
-    font-size: 0.85rem;
+    padding: 9px 10px;
+    font-size: 0.82rem;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .dropzone {
+    padding: 1.5rem 1rem;
+  }
+
+  .dropzone-icon {
+    font-size: 2rem;
   }
 }
 
@@ -883,7 +916,7 @@ body {
   }
 
   .nav-brand h1 {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
 
   .stats-grid {
@@ -891,12 +924,12 @@ body {
   }
 
   .page-title h2 {
-    font-size: 1.25rem;
+    font-size: 1.2rem;
   }
 
   .btn {
-    padding: 8px 14px;
-    font-size: 0.85rem;
+    padding: 8px 12px;
+    font-size: 0.82rem;
   }
 
   .btn-label-responsive {
@@ -912,5 +945,12 @@ body {
     width: 100% !important;
     flex: 1 1 100% !important;
   }
+
+  .form-select,
+  .form-input {
+    font-size: 0.85rem;
+    padding: 8px 10px;
+  }
 }
+
 

@@ -156,13 +156,13 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
         <>
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <label style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                  Select Event / Bootcamp:
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: '1 1 280px' }}>
+                <label style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  Select Event:
                 </label>
                 <select
                   className="form-select"
-                  style={{ width: 'auto', minWidth: '300px', fontWeight: 600 }}
+                  style={{ flex: '1 1 200px', minWidth: '180px', fontWeight: 600 }}
                   value={selectedEventId}
                   onChange={(e) => setSelectedEventId(e.target.value)}
                 >
@@ -179,19 +179,20 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
               </div>
 
               {selectedEventId && (
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-start' }}>
                   <a
                     href={`/api/events/${selectedEventId}/export-excel/`}
                     download
                     className="btn btn-success"
-                    style={{ background: '#10b981', color: 'white' }}
+                    style={{ background: '#10b981', color: 'white', flex: '1 1 auto', justifyContent: 'center' }}
                   >
-                    <FileSpreadsheet size={16} /> Download Excel Sheet (.xls)
+                    <FileSpreadsheet size={16} /> Download Excel (.xls)
                   </a>
                   <a
                     href={`/api/events/${selectedEventId}/export-csv/`}
                     download
                     className="btn btn-secondary"
+                    style={{ flex: '1 1 auto', justifyContent: 'center' }}
                   >
                     <Download size={16} /> Export CSV
                   </a>

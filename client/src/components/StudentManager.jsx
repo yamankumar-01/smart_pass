@@ -229,30 +229,30 @@ export default function StudentManager() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           {students.length > 0 && (
-            <button className="btn btn-danger" onClick={handleClearAllStudents} disabled={loading}>
+            <button className="btn btn-danger" onClick={handleClearAllStudents} disabled={loading} style={{ flex: '1 1 auto' }}>
               <Trash2 size={16} /> Delete All Students
             </button>
           )}
-          <button className="btn btn-secondary" onClick={() => setShowCsvModal(true)}>
+          <button className="btn btn-secondary" onClick={() => setShowCsvModal(true)} style={{ flex: '1 1 auto' }}>
             <Upload size={16} /> Upload CSV / Excel
           </button>
-          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+          <button className="btn btn-primary" onClick={() => setShowAddModal(true)} style={{ flex: '1 1 auto' }}>
             <UserPlus size={16} /> Add Student Manually
           </button>
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 150px', gap: '1rem' }}>
-          <div style={{ position: 'relative' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.85rem' }}>
+          <div style={{ position: 'relative', gridColumn: 'span 1' }}>
             <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"
               className="form-input"
               style={{ paddingLeft: '38px' }}
-              placeholder="Search by student name, email or token..."
+              placeholder="Search student name, email or token..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

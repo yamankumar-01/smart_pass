@@ -57,12 +57,12 @@ export default function EmailInbox() {
           <p>Inspect dispatched email receipts, preview student QR passes, and manage email logs.</p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn btn-secondary" onClick={loadEmails} disabled={loading}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary" onClick={loadEmails} disabled={loading} style={{ flex: '1 1 auto' }}>
             <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh Inbox
           </button>
           {emails.length > 0 && (
-            <button className="btn btn-danger" onClick={handleClearAll}>
+            <button className="btn btn-danger" onClick={handleClearAll} style={{ flex: '1 1 auto' }}>
               <Trash2 size={16} /> Clear All Logs
             </button>
           )}

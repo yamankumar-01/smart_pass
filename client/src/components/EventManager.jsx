@@ -131,19 +131,19 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '1.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))', gap: '1.25rem' }}>
           {events.map((eventObj) => (
             <div key={eventObj.id} className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span className="badge badge-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                         <Layers size={12} /> {eventObj.sessions?.length || 0} Lecture Days
                       </span>
                       <span className="badge badge-success">Active Event</span>
                     </div>
-                    <h3 style={{ margin: '8px 0 4px', fontSize: '1.25rem', color: 'var(--text-main)' }}>{eventObj.title}</h3>
+                    <h3 style={{ margin: '8px 0 4px', fontSize: '1.2rem', color: 'var(--text-main)', wordBreak: 'break-word' }}>{eventObj.title}</h3>
                     {eventObj.description && (
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '12px' }}>
                         {eventObj.description}
@@ -153,7 +153,7 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
 
                   <button
                     className="btn btn-ghost"
-                    style={{ color: '#ef4444', padding: '6px' }}
+                    style={{ color: '#ef4444', padding: '6px', shrink: 0 }}
                     onClick={(e) => handleDeleteEvent(eventObj.id, e)}
                     title="Delete Event"
                   >
@@ -161,7 +161,7 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem', background: 'var(--bg-input)', padding: '8px 12px', borderRadius: '6px' }}>
+                <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem', background: 'var(--bg-input)', padding: '8px 12px', borderRadius: '6px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <Calendar size={14} /> {eventObj.start_date} to {eventObj.end_date}
                   </div>
@@ -188,11 +188,13 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
                           padding: '8px 12px',
                           background: 'rgba(255, 255, 255, 0.03)',
                           border: '1px solid var(--border)',
-                          borderRadius: '8px'
+                          borderRadius: '8px',
+                          flexWrap: 'wrap',
+                          gap: '8px'
                         }}
                       >
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ flex: '1 1 180px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <span style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.85rem' }}>
                               {sess.day_label || 'Day'}
                             </span>
@@ -223,7 +225,7 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
               <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '8px', flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-secondary"
-                  style={{ flex: 1, padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                  style={{ flex: '1 1 100px', padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                   onClick={() => handleOpenAddDay(eventObj)}
                 >
                   <Plus size={14} /> Add Day
@@ -231,7 +233,7 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
 
                 <button
                   className="btn btn-secondary"
-                  style={{ flex: 1, padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', whiteSpace: 'nowrap', color: 'var(--primary)', borderColor: 'var(--primary)' }}
+                  style={{ flex: '1 1 120px', padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', color: 'var(--primary)', borderColor: 'var(--primary)' }}
                   onClick={() => onSelectEventForDispatch && onSelectEventForDispatch(eventObj)}
                   title="Dispatch QR Passes for this Event via Email"
                 >
@@ -240,7 +242,7 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
 
                 <button
                   className="btn btn-primary"
-                  style={{ flex: 1, padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                  style={{ flex: '1 1 110px', padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                   onClick={() => onSelectEventForReport && onSelectEventForReport(eventObj)}
                 >
                   <FileSpreadsheet size={14} /> Matrix Report
@@ -254,15 +256,15 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
       {/* Modal: Create Event */}
       {showEventModal && (
         <div className="modal-overlay" onClick={() => setShowEventModal(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-            <div className="modal-header">
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0, fontSize: '1.15rem' }}>
                 <Sparkles size={20} color="var(--primary)" /> Create New Multi-Day Event
               </h3>
-              <button className="btn-close" onClick={() => setShowEventModal(false)}>×</button>
+              <button className="modal-close" onClick={() => setShowEventModal(false)}>×</button>
             </div>
 
-            <form onSubmit={handleCreateEvent} style={{ marginTop: '1rem' }}>
+            <form onSubmit={handleCreateEvent} style={{ marginTop: '0.5rem' }}>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Event / Bootcamp Title *</label>
                 <input
@@ -309,7 +311,7 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowEventModal(false)}>
                   Cancel
                 </button>
@@ -325,15 +327,19 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
       {/* Modal: Add Day / Lecture Slot */}
       {showDayModal && selectedEvent && (
         <div className="modal-overlay" onClick={() => setShowDayModal(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Plus size={20} color="var(--primary)" /> Add Lecture Day to: {selectedEvent.title}
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0, fontSize: '1.15rem' }}>
+                <Plus size={20} color="var(--primary)" /> Add Lecture Day
               </h3>
-              <button className="btn-close" onClick={() => setShowDayModal(false)}>×</button>
+              <button className="modal-close" onClick={() => setShowDayModal(false)}>×</button>
             </div>
 
-            <form onSubmit={handleAddDay} style={{ marginTop: '1rem' }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+              Target Event: <strong>{selectedEvent.title}</strong>
+            </p>
+
+            <form onSubmit={handleAddDay} style={{ marginTop: '0.5rem' }}>
               <div className="form-row" style={{ marginBottom: '1rem' }}>
                 <div className="form-group">
                   <label>Day Label *</label>
@@ -369,7 +375,7 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowDayModal(false)}>
                   Cancel
                 </button>
