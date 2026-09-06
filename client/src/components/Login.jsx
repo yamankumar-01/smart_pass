@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { QrCode, Lock, User, KeyRound, LogIn, AlertCircle, X, Shield, Users } from 'lucide-react';
+import { QrCode, Lock, User, KeyRound, LogIn, AlertCircle, X, Shield, Users, Eye, EyeOff } from 'lucide-react';
 import api from '../api/axios';
 
 export default function Login({ onLoginSuccess, onClose, isModal = false }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -129,14 +130,34 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
           <div style={{ position: 'relative' }}>
             <KeyRound size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               className="form-input"
-              style={{ paddingLeft: '38px', width: '100%' }}
+              style={{ paddingLeft: '38px', paddingRight: '38px', width: '100%' }}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
               required
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{
+                position: 'absolute',
+                right: '10px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '4px'
+              }}
+              title={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
           </div>
         </div>
 
