@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qr_attendance_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=django-insecure-production-key-change-this-in-env
+      - ALLOWED_HOSTS=*
+      - CORS_ALLOW_ALL_ORIGINS=True
+    volumes:
+      - app_media:/app/backend/media
+      - app_db:/app/backend/
+
+volumes:
+  app_media:
+  app_db:
