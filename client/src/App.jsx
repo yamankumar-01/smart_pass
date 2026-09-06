@@ -11,22 +11,55 @@ import Login from './components/Login';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState('scanner');
+  
+  // Persist active tab across browser reloads
+  const validTabs = ['scanner', 'events', 'students', 'dispatch', 'reports', 'emails', 'settings'];
+  const getInitialTab = () => {
+    const hash = window.location.hash.replace('#', '');
+    if (validTabs.includes(hash)) {
+      return hash;
+    }
+    const saved = localStorage.getItem('activeTab');
+    if (saved && validTabs.includes(saved)) {
+      return saved;
+    }
+    return 'scanner';
+  };
+
+  const [activeTab, setActiveTabState] = useState(getInitialTab);
   const [activeSession, setActiveSession] = useState(null);
   const [selectedEventForReport, setSelectedEventForReport] = useState(null);
   const [selectedEventForDispatch, setSelectedEventForDispatch] = useState(null);
+
+  const setActiveTab = (tab) => {
+    setActiveTabState(tab);
+    localStorage.setItem('activeTab', tab);
+    window.location.hash = tab;
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
     if (token) {
       setIsAuthenticated(true);
     }
+
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (validTabs.includes(hash)) {
+        setActiveTabState(hash);
+        localStorage.setItem('activeTab', hash);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('username');
+    localStorage.removeItem('activeTab');
     setIsAuthenticated(false);
   };
 
