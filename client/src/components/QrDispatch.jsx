@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, QrCode, Mail, CheckCircle2, AlertCircle, RefreshCw, Sparkles, Layers, Calendar } from 'lucide-react';
+import { Send, QrCode, Mail, CheckCircle2, AlertCircle, RefreshCw, Sparkles, Layers, Calendar, Search } from 'lucide-react';
 import api from '../api/axios';
 
 export default function QrDispatch({ selectedEventForDispatch }) {
@@ -9,6 +9,8 @@ export default function QrDispatch({ selectedEventForDispatch }) {
   const [loading, setLoading] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState(null);
   const [progress, setProgress] = useState(0);
+  const [tableSearch, setTableSearch] = useState('');
+  const [sendingPassId, setSendingPassId] = useState(null);
 
   const loadEvents = async () => {
     try {
@@ -122,6 +124,33 @@ export default function QrDispatch({ selectedEventForDispatch }) {
       }, 3500);
     }
   };
+
+  const handleSendSinglePass = async (passItem) => {
+    if (!selectedEventId) return;
+    setSendingPassId(passItem.id);
+    try {
+      const res = await api.post(`/events/${selectedEventId}/send-single-pass/`, {
+        pass_id: passItem.id
+      });
+      alert(res.data.message || `QR Event Pass sent to ${passItem.student.email}!`);
+      setPasses(prev => prev.map(p => p.id === passItem.id ? { ...p, qr_sent: true } : p));
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.message || 'Failed to dispatch pass email.');
+    } finally {
+      setSendingPassId(null);
+    }
+  };
+
+  const filteredPasses = passes.filter(p => {
+    if (!tableSearch) return true;
+    const term = tableSearch.toLowerCase();
+    return (
+      p.student?.name?.toLowerCase().includes(term) ||
+      p.student?.email?.toLowerCase().includes(term) ||
+      p.student?.branch?.toLowerCase().includes(term) ||
+      (p.event_token && p.event_token.toLowerCase().includes(term))
+    );
+  });
 
   return (
     <div className="qr-dispatch-page">
@@ -264,13 +293,38 @@ export default function QrDispatch({ selectedEventForDispatch }) {
 
       {/* Event Pass Table */}
       <div className="table-container card" style={{ padding: 0 }}>
-        <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h4 style={{ margin: 0, color: 'var(--text-main)' }}>
-            {selectedEvent ? `Passes for: ${selectedEvent.title}` : 'Event Passes'}
-          </h4>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            {passes.length} Student Passes Registered
-          </span>
+        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h4 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.05rem' }}>
+              {selectedEvent ? `Passes for: ${selectedEvent.title}` : 'Event Passes'}
+            </h4>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {passes.length} Student Passes Registered ({passes.filter(p => p.qr_sent).length} Sent, {passes.filter(p => !p.qr_sent).length} Pending)
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', width: '220px' }}>
+              <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-input"
+                style={{ paddingLeft: '32px', fontSize: '0.85rem', height: '36px' }}
+                placeholder="Search student / email..."
+                value={tableSearch}
+                onChange={(e) => setTableSearch(e.target.value)}
+              />
+            </div>
+
+            <button
+              className="btn btn-primary"
+              onClick={handleSendEmails}
+              disabled={loading || !selectedEventId || passes.length === 0}
+              style={{ padding: '8px 16px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Send size={15} /> 🚀 Dispatch Event Passes
+            </button>
+          </div>
         </div>
 
         <table className="data-table">
@@ -281,26 +335,39 @@ export default function QrDispatch({ selectedEventForDispatch }) {
               <th>Branch / Year</th>
               <th>Event Pass UUID Token</th>
               <th>Delivery Status</th>
+              <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {passes.length === 0 ? (
+            {filteredPasses.length === 0 ? (
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                  No event passes found. Click "Generate Event Pass Tokens" above.
+                <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  {passes.length === 0 ? 'No event passes found. Click "Generate Event Pass Tokens" above.' : 'No students match your search.'}
                 </td>
               </tr>
             ) : (
-              passes.map((passItem) => (
+              filteredPasses.map((passItem) => (
                 <tr key={passItem.id}>
-                  <td><strong>{passItem.student.name}</strong></td>
-                  <td style={{ color: 'var(--text-muted)' }}>{passItem.student.email}</td>
-                  <td>{passItem.student.branch} - Y{passItem.student.year} Sec {passItem.student.section}</td>
+                  <td><strong>{passItem.student?.name}</strong></td>
+                  <td style={{ color: 'var(--text-muted)' }}>{passItem.student?.email}</td>
+                  <td>{passItem.student?.branch} - Y{passItem.student?.year} Sec {passItem.student?.section}</td>
                   <td><span className="token-code">{passItem.event_token || passItem.token}</span></td>
                   <td>
                     <span className={`badge badge-${passItem.qr_sent ? 'success' : 'warning'}`}>
                       {passItem.qr_sent ? '✅ PASS SENT' : '⏳ PENDING'}
                     </span>
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleSendSinglePass(passItem)}
+                      disabled={sendingPassId === passItem.id}
+                      style={{ padding: '4px 10px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      title={`Dispatch QR pass to ${passItem.student?.email}`}
+                    >
+                      <Mail size={13} />
+                      {sendingPassId === passItem.id ? 'Sending...' : (passItem.qr_sent ? 'Resend Pass' : 'Dispatch Pass')}
+                    </button>
                   </td>
                 </tr>
               ))

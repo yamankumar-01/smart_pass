@@ -628,6 +628,20 @@ class EventViewSet(viewsets.ModelViewSet):
         passes = event_obj.passes.all().select_related('student', 'event').order_by('student__name')
         return Response(EventPassSerializer(passes, many=True).data)
 
+    @action(detail=True, methods=['post'], url_path='send-single-pass')
+    def send_single_pass(self, request, pk=None):
+        event_obj = self.get_object()
+        pass_id = request.data.get('pass_id')
+        pass_item = EventPass.objects.filter(event=event_obj, id=pass_id).select_related('student', 'event').first()
+        if not pass_item:
+            return Response({'error': 'Event pass record not found'}, status=status.HTTP_404_NOT_FOUND)
+        log = send_event_qr_email(pass_item)
+        return Response({
+            'message': f'QR Event Pass sent to {pass_item.student.email} ({pass_item.student.name})!',
+            'status': log.status if log else 'SENT',
+            'error': log.error_message if log else ''
+        })
+
 class AttendanceSessionViewSet(viewsets.ModelViewSet):
     queryset = AttendanceSession.objects.all().order_by('-id')
     serializer_class = AttendanceSessionSerializer
