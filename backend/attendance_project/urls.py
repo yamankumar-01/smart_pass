@@ -4,15 +4,17 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
-from django.views.generic import TemplateView
+from django.views.static import serve
 from django.http import HttpResponse, FileResponse
 
+FRONTEND_DIST = Path(settings.BASE_DIR).parent / 'client' / 'dist'
+
 def serve_spa_index(request):
-    dist_index = Path(settings.BASE_DIR).parent / 'client' / 'dist' / 'index.html'
+    dist_index = FRONTEND_DIST / 'index.html'
     if dist_index.exists():
         return FileResponse(open(dist_index, 'rb'), content_type='text/html')
     return HttpResponse(
-        "<h2>Smart Attendance QR System API is Live!</h2><p>Frontend assets are being built or please run the React development server.</p>",
+        "<h2>Smart Attendance QR System API is Live!</h2><p>Frontend assets are being built.</p>",
         content_type="text/html"
     )
 
@@ -21,10 +23,17 @@ urlpatterns = [
     path('api/', include('attendance_api.urls')),
 ]
 
-# Serve media files in both development and production
+# Serve media files
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# Explicitly serve Vite static bundle assets (/assets/...)
+urlpatterns += [
+    re_path(r'^assets/(?P<path>.*)$', serve, {
+        'document_root': FRONTEND_DIST / 'assets',
+    }),
+]
 
 # Catch-all route to serve the Single Page Application (React Vite Frontend)
 urlpatterns += [
-    re_path(r'^(?!api|admin|media|static).*$', serve_spa_index, name='spa_index'),
+    re_path(r'^(?!api|admin|media|static|assets).*$', serve_spa_index, name='spa_index'),
 ]
