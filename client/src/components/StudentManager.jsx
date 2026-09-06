@@ -1,17 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Upload, Download, Search, Mail, QrCode, Trash2, FileText, CheckCircle2, AlertCircle, RefreshCw, Layers } from 'lucide-react';
+import { UserPlus, Upload, Download, Search, Mail, QrCode, Trash2, FileText, CheckCircle2, AlertCircle, RefreshCw, Layers, Plus, X, Calendar, UserCheck } from 'lucide-react';
 import api from '../api/axios';
 
-export default function StudentManager() {
+export default function StudentManager({ initialEventFilter }) {
   const [students, setStudents] = useState([]);
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [yearFilter, setYearFilter] = useState('');
+  const [eventFilter, setEventFilter] = useState(initialEventFilter ? String(initialEventFilter.id) : '');
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCsvModal, setShowCsvModal] = useState(false);
+  const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [studentToEnroll, setStudentToEnroll] = useState(null);
+  const [enrollEventId, setEnrollEventId] = useState('');
+  const [enrollLoading, setEnrollLoading] = useState(false);
+
   const [selectedStudentQr, setSelectedStudentQr] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -19,14 +26,25 @@ export default function StudentManager() {
     email: '',
     branch: 'Computer Science',
     year: '1',
-    section: 'A'
+    section: 'A',
+    event_id: ''
   });
 
   const [csvFile, setCsvFile] = useState(null);
+  const [uploadEventId, setUploadEventId] = useState(initialEventFilter ? String(initialEventFilter.id) : '');
   const [csvMessage, setCsvMessage] = useState(null);
   const [uploadRowReport, setUploadRowReport] = useState(null);
   const [duplicatesList, setDuplicatesList] = useState([]);
   const [duplicateActionLoading, setDuplicateActionLoading] = useState(false);
+
+  const loadEvents = async () => {
+    try {
+      const res = await api.get('/events/');
+      setEvents(res.data);
+    } catch (err) {
+      console.error('Failed to load events:', err);
+    }
+  };
 
   const loadStudents = async () => {
     setLoading(true);
@@ -35,6 +53,7 @@ export default function StudentManager() {
       if (search) queryParams.append('search', search);
       if (branchFilter) queryParams.append('branch', branchFilter);
       if (yearFilter) queryParams.append('year', yearFilter);
+      if (eventFilter) queryParams.append('event_id', eventFilter);
 
       const res = await api.get(`/students/?${queryParams.toString()}`);
       const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
@@ -48,16 +67,37 @@ export default function StudentManager() {
   };
 
   useEffect(() => {
+    loadEvents();
+  }, []);
+
+  useEffect(() => {
+    if (initialEventFilter) {
+      setEventFilter(String(initialEventFilter.id));
+      setUploadEventId(String(initialEventFilter.id));
+    }
+  }, [initialEventFilter]);
+
+  useEffect(() => {
     loadStudents();
-  }, [search, branchFilter, yearFilter]);
+  }, [search, branchFilter, yearFilter, eventFilter]);
 
   const handleSingleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await api.post('/students/', formData);
+      const payload = {
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
+        branch: formData.branch.trim(),
+        year: formData.year,
+        section: formData.section.trim(),
+        event_id: formData.event_id || null
+      };
+
+      const res = await api.post('/students/', payload);
       setShowAddModal(false);
-      setFormData({ name: '', email: '', branch: 'Computer Science', year: '1', section: 'A' });
+      setFormData({ name: '', email: '', branch: 'Computer Science', year: '1', section: 'A', event_id: '' });
       loadStudents();
+      loadEvents();
       alert(`Student ${res.data.name} added & QR code generated!`);
     } catch (err) {
       alert(err.response?.data?.email?.[0] || 'Failed to add student');
@@ -70,6 +110,9 @@ export default function StudentManager() {
 
     const data = new FormData();
     data.append('file', csvFile);
+    if (uploadEventId) {
+      data.append('event_id', uploadEventId);
+    }
 
     setLoading(true);
     setCsvMessage(null);
@@ -84,16 +127,60 @@ export default function StudentManager() {
       setCsvMessage({ type: 'success', text: res.data.message });
       setUploadRowReport({
         added: res.data.addedCount,
-        skipped: res.data.skippedCount
+        skipped: res.data.skippedCount,
+        eventTitle: res.data.eventTitle
       });
       if (res.data.duplicates && res.data.duplicates.length > 0) {
         setDuplicatesList(res.data.duplicates);
       }
       loadStudents();
+      loadEvents();
     } catch (err) {
       setCsvMessage({ type: 'danger', text: err.response?.data?.error || 'Upload failed' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenEnrollModal = (student) => {
+    setStudentToEnroll(student);
+    setEnrollEventId(events.length > 0 ? String(events[0].id) : '');
+    setShowEnrollModal(true);
+  };
+
+  const handleEnrollStudent = async (e) => {
+    e.preventDefault();
+    if (!studentToEnroll || !enrollEventId) return;
+
+    setEnrollLoading(true);
+    try {
+      const res = await api.post('/students/enroll-event/', {
+        event_id: parseInt(enrollEventId),
+        student_ids: [studentToEnroll.id]
+      });
+      alert(res.data.message || 'Student enrolled successfully!');
+      setShowEnrollModal(false);
+      setStudentToEnroll(null);
+      loadStudents();
+      loadEvents();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to enroll student into event.');
+    } finally {
+      setEnrollLoading(false);
+    }
+  };
+
+  const handleUnenrollStudent = async (studentId, eventId, eventTitle, studentName) => {
+    if (!window.confirm(`Remove ${studentName} from "${eventTitle}"?`)) return;
+    try {
+      await api.post('/students/unenroll-event/', {
+        event_id: eventId,
+        student_id: studentId
+      });
+      loadStudents();
+      loadEvents();
+    } catch (err) {
+      alert('Failed to unenroll student.');
     }
   };
 
@@ -190,6 +277,7 @@ export default function StudentManager() {
     try {
       await api.delete(`/students/${studentId}/`);
       loadStudents();
+      loadEvents();
     } catch (err) {
       alert('Failed to delete student.');
     }
@@ -204,6 +292,7 @@ export default function StudentManager() {
       setStudents([]);
       alert('All student records have been deleted successfully.');
       loadStudents();
+      loadEvents();
     } catch (err) {
       alert('Failed to clear students.');
     } finally {
@@ -213,24 +302,31 @@ export default function StudentManager() {
 
   const availableBranches = Array.from(new Set(students.map(s => s.branch).filter(Boolean))).sort();
   const availableYears = Array.from(new Set(students.map(s => String(s.year)).filter(Boolean))).sort();
+  const currentFilteredEvent = events.find(e => String(e.id) === String(eventFilter));
 
   return (
     <div className="student-manager">
       <div className="page-header">
         <div className="page-title">
-          <h2>Student Upload & Management</h2>
+          <h2>Student Upload & Event Enrollment</h2>
           <p>
-            Import student records via CSV / Excel upload or manual form input.
+            {currentFilteredEvent ? (
+              <span>
+                Showing students registered for <strong>{currentFilteredEvent.title}</strong>
+              </span>
+            ) : (
+              <span>Import and classify student records by specific Academic Events & Workshops.</span>
+            )}
             {students.length > 0 && (
               <span className="badge badge-success" style={{ marginLeft: '10px', fontSize: '0.85rem' }}>
-                {students.length} Students Enrolled
+                {students.length} {currentFilteredEvent ? `in ${currentFilteredEvent.title}` : 'Total Students'}
               </span>
             )}
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {students.length > 0 && (
+          {students.length > 0 && !eventFilter && (
             <button className="btn btn-danger" onClick={handleClearAllStudents} disabled={loading} style={{ flex: '1 1 auto' }}>
               <Trash2 size={16} /> Delete All Students
             </button>
@@ -244,36 +340,69 @@ export default function StudentManager() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: '1.5rem', padding: '1rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.85rem' }}>
-          <div style={{ position: 'relative', gridColumn: 'span 1' }}>
-            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              className="form-input"
-              style={{ paddingLeft: '38px' }}
-              placeholder="Search student name, email or token..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+      {/* Filter Toolbar */}
+      <div className="card" style={{ marginBottom: '1.5rem', padding: '1.15rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: '0.85rem' }}>
+          
+          {/* Event Filter */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>🎯 Filter by Event</label>
+            <select
+              className="form-select"
+              style={{ fontWeight: 600, borderColor: eventFilter ? 'var(--primary)' : 'var(--border)' }}
+              value={eventFilter}
+              onChange={(e) => setEventFilter(e.target.value)}
+            >
+              <option value="">All Events (Global Directory)</option>
+              {events.map(ev => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.title} ({ev.total_enrolled || 0} enrolled)
+                </option>
+              ))}
+            </select>
           </div>
 
-          <select className="form-select" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-            <option value="">All Branches ({availableBranches.length})</option>
-            {availableBranches.map(b => (
-              <option key={b} value={b}>{b}</option>
-            ))}
-          </select>
+          {/* Search Box */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>🔍 Search</label>
+            <div style={{ position: 'relative' }}>
+              <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-input"
+                style={{ paddingLeft: '36px' }}
+                placeholder="Name, email, token..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
 
-          <select className="form-select" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
-            <option value="">All Years ({availableYears.length})</option>
-            {availableYears.map(y => (
-              <option key={y} value={y}>Year {y}</option>
-            ))}
-          </select>
+          {/* Branch Filter */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>🏛️ Branch</label>
+            <select className="form-select" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+              <option value="">All Branches ({availableBranches.length})</option>
+              {availableBranches.map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Year Filter */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>📅 Academic Year</label>
+            <select className="form-select" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
+              <option value="">All Years ({availableYears.length})</option>
+              {availableYears.map(y => (
+                <option key={y} value={y}>Year {y}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
+      {/* Student Table */}
       <div className="table-container card" style={{ padding: 0 }}>
         <table className="data-table">
           <thead>
@@ -281,17 +410,32 @@ export default function StudentManager() {
               <th>ID</th>
               <th>Student Name</th>
               <th>Email Address</th>
-              <th>Branch / Department</th>
+              <th>Branch / Dept</th>
               <th>Year & Sec</th>
-              <th>UUID Token</th>
+              <th>Enrolled Events</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {students.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                  No student records found. Add students manually or import a CSV file.
+                <td colSpan="7" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+                  {eventFilter ? (
+                    <div>
+                      <Calendar size={36} color="var(--primary)" style={{ opacity: 0.7, margin: '0 auto 8px' }} />
+                      <p style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--text-main)', margin: '0 0 4px' }}>
+                        No students enrolled in "{currentFilteredEvent?.title}" yet.
+                      </p>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 1rem' }}>
+                        Upload a spreadsheet or add students directly for this event.
+                      </p>
+                      <button className="btn btn-primary btn-sm" onClick={() => setShowCsvModal(true)}>
+                        <Upload size={14} /> Upload Students for this Event
+                      </button>
+                    </div>
+                  ) : (
+                    'No student records found. Add students manually or import a CSV file.'
+                  )}
                 </td>
               </tr>
             ) : (
@@ -307,7 +451,40 @@ export default function StudentManager() {
                   </td>
                   <td>Year {student.year} - Sec {student.section}</td>
                   <td>
-                    <span className="token-code">{student.unique_token || student.token}</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
+                      {(!student.enrolled_events || student.enrolled_events.length === 0) ? (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>None (General Pool)</span>
+                      ) : (
+                        student.enrolled_events.map(ev => (
+                          <span
+                            key={ev.id}
+                            className="badge badge-primary"
+                            style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}
+                            title={`Registered in ${ev.title}`}
+                          >
+                            🎯 {ev.title}
+                            <button
+                              type="button"
+                              onClick={() => handleUnenrollStudent(student.id, ev.id, ev.title, student.name)}
+                              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px', lineHeight: 1, opacity: 0.8 }}
+                              title="Unenroll from this event"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))
+                      )}
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '2px 6px', fontSize: '0.7rem', height: '22px' }}
+                        onClick={() => handleOpenEnrollModal(student)}
+                        title="Enroll into another Event"
+                      >
+                        + Enroll
+                      </button>
+                    </div>
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '6px' }}>
@@ -316,7 +493,7 @@ export default function StudentManager() {
                         onClick={() => setSelectedStudentQr(student)}
                         title="View / Download QR Pass"
                       >
-                        <QrCode size={14} /> View Pass
+                        <QrCode size={14} /> View
                       </button>
 
                       <button
@@ -324,7 +501,7 @@ export default function StudentManager() {
                         onClick={() => handleResendEmail(student.id, student.name)}
                         title="Send / Resend Email with QR Code"
                       >
-                        <Mail size={14} /> Email Pass
+                        <Mail size={14} /> Email
                       </button>
 
                       <button
@@ -343,14 +520,35 @@ export default function StudentManager() {
         </table>
       </div>
 
-      {/* Manual Add Student Form */}
+      {/* Manual Add Student Modal */}
       {showAddModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <button className="modal-close" onClick={() => setShowAddModal(false)}>×</button>
-            <h3 style={{ marginBottom: '1rem', fontFamily: 'var(--font-heading)' }}>Manual Add Student</h3>
+        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UserPlus size={20} color="var(--primary)" /> Add Student
+              </h3>
+              <button className="modal-close" onClick={() => setShowAddModal(false)}>×</button>
+            </div>
+
             <form onSubmit={handleSingleSubmit}>
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label>🎯 Assign to Event (Optional)</label>
+                <select
+                  className="form-select"
+                  value={formData.event_id}
+                  onChange={(e) => setFormData({ ...formData, event_id: e.target.value })}
+                >
+                  <option value="">General Student Pool (Not linked to specific event)</option>
+                  {events.map(ev => (
+                    <option key={ev.id} value={ev.id}>
+                      🎯 {ev.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Student Full Name *</label>
                 <input
                   type="text"
@@ -362,7 +560,7 @@ export default function StudentManager() {
                 />
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Student Email Address *</label>
                 <input
                   type="email"
@@ -374,7 +572,7 @@ export default function StudentManager() {
                 />
               </div>
 
-              <div className="form-row">
+              <div className="form-row" style={{ marginBottom: '1.5rem' }}>
                 <div className="form-group">
                   <label>Branch / Major *</label>
                   <input
@@ -414,7 +612,7 @@ export default function StudentManager() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Generate Pass & Save</button>
               </div>
@@ -423,17 +621,45 @@ export default function StudentManager() {
         </div>
       )}
 
-      {/* CSV & Excel Upload UI */}
+      {/* CSV & Excel Upload Modal */}
       {showCsvModal && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: duplicatesList.length > 0 ? '920px' : '600px', width: '100%', transition: 'max-width 0.2s ease' }}>
-            <button className="modal-close" onClick={() => setShowCsvModal(false)}>×</button>
-            <h3 style={{ marginBottom: '0.5rem', fontFamily: 'var(--font-heading)' }}>Bulk CSV / Excel Student Upload</h3>
+        <div className="modal-overlay" onClick={() => setShowCsvModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: duplicatesList.length > 0 ? '920px' : '620px', width: '100%', transition: 'max-width 0.2s ease' }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Upload size={20} color="var(--primary)" /> Bulk CSV / Excel Student Upload
+              </h3>
+              <button className="modal-close" onClick={() => setShowCsvModal(false)}>×</button>
+            </div>
+
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-              Upload a <strong>.csv</strong> or <strong>.xlsx / .xls</strong> spreadsheet. Columns in order: <strong>Student Name, Email, Branch, Year, Section</strong> (or auto-detected from headers).
+              Upload a <strong>.csv</strong> or <strong>.xlsx / .xls</strong> spreadsheet. Columns: <strong>Student Name, Email, Branch, Year, Section</strong>.
             </p>
 
             <form onSubmit={handleCsvSubmit}>
+              {/* Event Target Selector */}
+              <div className="form-group" style={{ marginBottom: '1.25rem', padding: '10px 12px', background: 'var(--bg-input)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <label style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text-main)', marginBottom: '4px', display: 'block' }}>
+                  🎯 Target Event for this Upload:
+                </label>
+                <select
+                  className="form-select"
+                  style={{ fontWeight: 600 }}
+                  value={uploadEventId}
+                  onChange={(e) => setUploadEventId(e.target.value)}
+                >
+                  <option value="">General Student Directory (Not tied to single event)</option>
+                  {events.map(ev => (
+                    <option key={ev.id} value={ev.id}>
+                      🎯 {ev.title} ({ev.sessions?.length || 0} Lecture Days)
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                  {uploadEventId ? `Uploaded students will automatically be registered and issued passes for this event.` : 'Students will be stored in global directory.'}
+                </span>
+              </div>
+
               <div
                 className="dropzone"
                 onClick={() => document.getElementById('csvFileInput').click()}
@@ -452,7 +678,7 @@ export default function StudentManager() {
                 />
               </div>
 
-              {/* Upload Status (Success/Failure Row Report) */}
+              {/* Upload Status */}
               {uploadRowReport && (
                 <div style={{ marginTop: '1.25rem', padding: '14px', background: 'rgba(16, 185, 129, 0.08)', borderRadius: '10px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
                   <h4 style={{ fontSize: '0.9rem', color: '#10b981', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -460,10 +686,10 @@ export default function StudentManager() {
                   </h4>
                   <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', flexWrap: 'wrap' }}>
                     <span style={{ color: 'var(--success)', fontWeight: 700 }}>
-                      ✅ {uploadRowReport.added} New Student(s) Enrolled
+                      ✅ {uploadRowReport.added} New Student(s) Enrolled {uploadRowReport.eventTitle ? `into "${uploadRowReport.eventTitle}"` : ''}
                     </span>
                     <span style={{ color: uploadRowReport.skipped > 0 ? '#f59e0b' : 'var(--text-muted)', fontWeight: 600 }}>
-                      ⚠️ {uploadRowReport.skipped} Existing / Duplicate Email(s) Skipped
+                      ⚠️ {uploadRowReport.skipped} Existing / Duplicate Email(s) Handled
                     </span>
                   </div>
                 </div>
@@ -606,7 +832,7 @@ export default function StudentManager() {
                   <>
                     <button type="button" className="btn btn-secondary" onClick={() => setShowCsvModal(false)}>Close</button>
                     <button type="submit" className="btn btn-primary" disabled={!csvFile || loading}>
-                      {loading ? 'Processing Upload...' : 'Upload & Process File'}
+                      {loading ? 'Processing Upload...' : 'Upload & Enroll Students'}
                     </button>
                   </>
                 )}
@@ -616,9 +842,53 @@ export default function StudentManager() {
         </div>
       )}
 
+      {/* 1-Click Enroll Student into Event Modal */}
+      {showEnrollModal && studentToEnroll && (
+        <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.15rem' }}>
+                <UserCheck size={20} color="var(--primary)" /> Enroll into Event
+              </h3>
+              <button className="modal-close" onClick={() => setShowEnrollModal(false)}>×</button>
+            </div>
+
+            <p style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
+              Enrolling <strong>{studentToEnroll.name}</strong> ({studentToEnroll.email}):
+            </p>
+
+            <form onSubmit={handleEnrollStudent}>
+              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                <label>Select Target Event *</label>
+                <select
+                  className="form-select"
+                  value={enrollEventId}
+                  onChange={(e) => setEnrollEventId(e.target.value)}
+                  required
+                >
+                  {events.map(ev => (
+                    <option key={ev.id} value={ev.id}>
+                      🎯 {ev.title} ({ev.sessions?.length || 0} Lecture Days)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEnrollModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={enrollLoading || !enrollEventId}>
+                  {enrollLoading ? 'Enrolling...' : 'Confirm Enrollment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* View QR Pass Modal */}
       {selectedStudentQr && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ textAlign: 'center' }}>
+        <div className="modal-overlay" onClick={() => setSelectedStudentQr(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ textAlign: 'center' }}>
             <button className="modal-close" onClick={() => setSelectedStudentQr(null)}>×</button>
             <h3 style={{ fontFamily: 'var(--font-heading)', marginBottom: '4px' }}>{selectedStudentQr.name}</h3>
             <p style={{ color: 'var(--primary)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>{selectedStudentQr.email}</p>

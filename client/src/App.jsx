@@ -30,6 +30,7 @@ export default function App() {
   const [activeSession, setActiveSession] = useState(null);
   const [selectedEventForReport, setSelectedEventForReport] = useState(null);
   const [selectedEventForDispatch, setSelectedEventForDispatch] = useState(null);
+  const [selectedEventForStudents, setSelectedEventForStudents] = useState(null);
 
   const setActiveTab = (tab) => {
     setActiveTabState(tab);
@@ -78,6 +79,11 @@ export default function App() {
     setActiveTab('dispatch');
   };
 
+  const handleSelectEventForStudents = (eventObj) => {
+    setSelectedEventForStudents(eventObj);
+    setActiveTab('students');
+  };
+
   if (!isAuthenticated) {
     return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
@@ -99,13 +105,17 @@ export default function App() {
             onSelectSessionForScan={handleSelectSessionForScan}
             onSelectEventForReport={handleSelectEventForReport}
             onSelectEventForDispatch={handleSelectEventForDispatch}
+            onSelectEventForStudents={handleSelectEventForStudents}
           />
         )}
         {activeTab === 'students' && (
-          <StudentManager />
+          <StudentManager initialEventFilter={selectedEventForStudents} />
         )}
         {activeTab === 'dispatch' && (
-          <QrDispatch selectedEventForDispatch={selectedEventForDispatch} />
+          <QrDispatch
+            selectedEventForDispatch={selectedEventForDispatch}
+            onNavigateToStudents={handleSelectEventForStudents}
+          />
         )}
         {activeTab === 'reports' && (
           <AttendanceReports

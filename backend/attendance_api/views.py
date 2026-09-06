@@ -61,7 +61,7 @@ def change_password_view(request):
     return Response({'message': f'Password for "{user.username}" updated successfully!'})
 
 class StudentViewSet(viewsets.ModelViewSet):
-    queryset = Student.objects.all().order_by('id')
+    queryset = Student.objects.all().prefetch_related('event_passes__event').order_by('id')
     serializer_class = StudentSerializer
     permission_classes = [AllowAny]
 
@@ -71,7 +71,10 @@ class StudentViewSet(viewsets.ModelViewSet):
         branch = self.request.query_params.get('branch', None)
         year = self.request.query_params.get('year', None)
         section = self.request.query_params.get('section', None)
+        event_id = self.request.query_params.get('event_id', None) or self.request.query_params.get('event', None)
 
+        if event_id:
+            qs = qs.filter(event_passes__event_id=event_id)
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(email__icontains=search) | qs.filter(unique_token__icontains=search)
         if branch:
@@ -80,13 +83,59 @@ class StudentViewSet(viewsets.ModelViewSet):
             qs = qs.filter(year=year)
         if section:
             qs = qs.filter(section=section)
-        return qs
+        return qs.distinct()
 
     def perform_create(self, serializer):
         student = serializer.save()
         file_content, _ = generate_qr_code(student.unique_token)
         student.qr_code_image.save(f"qr_{student.unique_token}.png", file_content, save=True)
+        
+        event_id = self.request.data.get('event_id') or self.request.data.get('event')
+        if event_id:
+            try:
+                event_obj = Event.objects.get(id=event_id)
+                ep, _ = EventPass.objects.get_or_create(event=event_obj, student=student)
+                send_event_qr_email(ep)
+                return
+            except Event.DoesNotExist:
+                pass
         send_student_qr_email(student)
+
+    @action(detail=False, methods=['post'], url_path='enroll-event')
+    def enroll_event(self, request):
+        event_id = request.data.get('event_id')
+        student_ids = request.data.get('student_ids', [])
+        if not event_id:
+            return Response({'error': 'event_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            event_obj = Event.objects.get(id=event_id)
+        except Event.DoesNotExist:
+            return Response({'error': 'Event not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not student_ids:
+            return Response({'error': 'student_ids list is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        students = Student.objects.filter(id__in=student_ids)
+        existing_st_ids = set(event_obj.passes.filter(student_id__in=student_ids).values_list('student_id', flat=True))
+        to_create = [EventPass(event=event_obj, student=st) for st in students if st.id not in existing_st_ids]
+        if to_create:
+            EventPass.objects.bulk_create(to_create)
+
+        return Response({
+            'message': f'Successfully enrolled {len(to_create)} student(s) into "{event_obj.title}".',
+            'enrolled_count': len(to_create),
+            'total_event_passes': event_obj.passes.count()
+        })
+
+    @action(detail=False, methods=['post'], url_path='unenroll-event')
+    def unenroll_event(self, request):
+        event_id = request.data.get('event_id')
+        student_id = request.data.get('student_id')
+        if not event_id or not student_id:
+            return Response({'error': 'event_id and student_id are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        deleted_count = EventPass.objects.filter(event_id=event_id, student_id=student_id).delete()[0]
+        return Response({'message': 'Removed student from event.', 'deleted_count': deleted_count})
 
     @action(detail=False, methods=['post'], url_path='upload')
     def upload(self, request):
@@ -375,14 +424,34 @@ def bulk_upload_csv_view(request):
     if to_create:
         Student.objects.bulk_create(to_create)
 
+    event_id = request.data.get('event_id') or request.POST.get('event_id')
+    event_obj = Event.objects.filter(id=event_id).first() if event_id else None
+    if event_obj:
+        all_emails = list(seen_in_file.keys()) + [d['email'] for d in duplicates if d.get('conflict_type') == 'EXISTING_IN_DATABASE']
+        file_students = Student.objects.filter(email__in=all_emails)
+        existing_pass_st_ids = set(event_obj.passes.filter(student__in=file_students).values_list('student_id', flat=True))
+        to_pass = [EventPass(event=event_obj, student=st) for st in file_students if st.id not in existing_pass_st_ids]
+        if to_pass:
+            EventPass.objects.bulk_create(to_pass)
+
     added_count = len(to_create)
     skipped_count = len(duplicates)
 
+    msg = f'⚡ File processed successfully! Added {added_count} new students'
+    if event_obj:
+        msg += f' & enrolled in "{event_obj.title}"'
+    if skipped_count:
+        msg += f' ({skipped_count} duplicate emails detected).'
+    else:
+        msg += '.'
+
     return Response({
-        'message': f'⚡ File processed successfully! Added {added_count} new students' + (f' ({skipped_count} duplicate emails detected).' if skipped_count else '.'),
+        'message': msg,
         'addedCount': added_count,
         'skippedCount': skipped_count,
-        'duplicates': duplicates
+        'duplicates': duplicates,
+        'eventId': event_obj.id if event_obj else None,
+        'eventTitle': event_obj.title if event_obj else None
     })
 
 @api_view(['POST'])
@@ -458,7 +527,12 @@ class EventViewSet(viewsets.ModelViewSet):
     def matrix_report(self, request, pk=None):
         event_obj = self.get_object()
         sessions = event_obj.sessions.all().order_by('date', 'id')
-        students = Student.objects.all().order_by('name')
+        
+        passes = list(event_obj.passes.all().select_related('student').order_by('student__name'))
+        if passes:
+            students = [p.student for p in passes]
+        else:
+            students = list(Student.objects.all().order_by('name'))
 
         records = AttendanceRecord.objects.filter(session__in=sessions, status='PRESENT')
         student_present_map = {}
@@ -512,7 +586,12 @@ class EventViewSet(viewsets.ModelViewSet):
     def export_csv(self, request, pk=None):
         event_obj = self.get_object()
         sessions = event_obj.sessions.all().order_by('date', 'id')
-        students = Student.objects.all().order_by('name')
+        
+        passes = list(event_obj.passes.all().select_related('student').order_by('student__name'))
+        if passes:
+            students = [p.student for p in passes]
+        else:
+            students = list(Student.objects.all().order_by('name'))
 
         records = AttendanceRecord.objects.filter(session__in=sessions, status='PRESENT')
         student_present_set = {(r.student_id, r.session_id) for r in records}
@@ -553,7 +632,12 @@ class EventViewSet(viewsets.ModelViewSet):
     def export_excel(self, request, pk=None):
         event_obj = self.get_object()
         sessions = event_obj.sessions.all().order_by('date', 'id')
-        students = Student.objects.all().order_by('name')
+        
+        passes = list(event_obj.passes.all().select_related('student').order_by('student__name'))
+        if passes:
+            students = [p.student for p in passes]
+        else:
+            students = list(Student.objects.all().order_by('name'))
 
         records = AttendanceRecord.objects.filter(session__in=sessions, status='PRESENT')
         student_present_set = {(r.student_id, r.session_id) for r in records}
@@ -616,7 +700,11 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='generate-passes')
     def generate_passes(self, request, pk=None):
         event_obj = self.get_object()
-        students = Student.objects.all()
+        student_ids = request.data.get('student_ids')
+        if student_ids:
+            students = Student.objects.filter(id__in=student_ids)
+        else:
+            students = Student.objects.all()
         existing_st_ids = set(event_obj.passes.values_list('student_id', flat=True))
         to_create = [EventPass(event=event_obj, student=st) for st in students if st.id not in existing_st_ids]
         if to_create:
@@ -630,14 +718,10 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='send-emails')
     def send_emails(self, request, pk=None):
         event_obj = self.get_object()
-        students = Student.objects.all()
-        existing_st_ids = set(event_obj.passes.values_list('student_id', flat=True))
-        to_create = [EventPass(event=event_obj, student=st) for st in students if st.id not in existing_st_ids]
-        if to_create:
-            EventPass.objects.bulk_create(to_create)
-
         passes = list(event_obj.passes.all().select_related('student', 'event'))
-        
+        if not passes:
+            return Response({'error': f'No student passes found for "{event_obj.title}". Please upload or enroll students for this event first.'}, status=status.HTTP_400_BAD_REQUEST)
+
         # High-speed asynchronous batch dispatch in background thread
         import threading
         threading.Thread(target=send_batch_event_qr_emails, args=(passes,), daemon=True).start()
@@ -652,17 +736,6 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='passes')
     def passes_list(self, request, pk=None):
         event_obj = self.get_object()
-        total_students = Student.objects.count()
-        current_passes_count = event_obj.passes.count()
-        
-        # Only perform auto-generation if new students were added since last pass generation
-        if current_passes_count < total_students:
-            students = Student.objects.all()
-            existing_st_ids = set(event_obj.passes.values_list('student_id', flat=True))
-            to_create = [EventPass(event=event_obj, student=st) for st in students if st.id not in existing_st_ids]
-            if to_create:
-                EventPass.objects.bulk_create(to_create)
-
         passes = event_obj.passes.all().select_related('student', 'event').order_by('student__name')
         return Response(EventPassSerializer(passes, many=True).data)
 

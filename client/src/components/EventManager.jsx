@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Layers, Play, CheckCircle2, FileSpreadsheet, Trash2, Clock, Sparkles, BookOpen, Send } from 'lucide-react';
+import { Calendar, Plus, Layers, Play, CheckCircle2, FileSpreadsheet, Trash2, Clock, Sparkles, BookOpen, Send, Users } from 'lucide-react';
 import api from '../api/axios';
 
-export default function EventManager({ onSelectSessionForScan, onSelectEventForReport, onSelectEventForDispatch }) {
+export default function EventManager({ onSelectSessionForScan, onSelectEventForReport, onSelectEventForDispatch, onSelectEventForStudents }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
@@ -141,6 +141,9 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
                       <span className="badge badge-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                         <Layers size={12} /> {eventObj.sessions?.length || 0} Lecture Days
                       </span>
+                      <span className="badge badge-info" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <Users size={12} /> {eventObj.total_enrolled || 0} Enrolled
+                      </span>
                       <span className="badge badge-success">Active Event</span>
                     </div>
                     <h3 style={{ margin: '8px 0 4px', fontSize: '1.2rem', color: 'var(--text-main)', wordBreak: 'break-word' }}>{eventObj.title}</h3>
@@ -225,7 +228,7 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
               <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '8px', flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-secondary"
-                  style={{ flex: '1 1 100px', padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                  style={{ flex: '1 1 90px', padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
                   onClick={() => handleOpenAddDay(eventObj)}
                 >
                   <Plus size={14} /> Add Day
@@ -233,11 +236,20 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
 
                 <button
                   className="btn btn-secondary"
-                  style={{ flex: '1 1 120px', padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', color: 'var(--primary)', borderColor: 'var(--primary)' }}
+                  style={{ flex: '1 1 110px', padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                  onClick={() => onSelectEventForStudents && onSelectEventForStudents(eventObj)}
+                  title="View & Upload Students enrolled in this Event"
+                >
+                  <Users size={14} /> Students
+                </button>
+
+                <button
+                  className="btn btn-secondary"
+                  style={{ flex: '1 1 110px', padding: '8px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', color: 'var(--primary)', borderColor: 'var(--primary)' }}
                   onClick={() => onSelectEventForDispatch && onSelectEventForDispatch(eventObj)}
                   title="Dispatch QR Passes for this Event via Email"
                 >
-                  <Send size={14} /> Dispatch Passes
+                  <Send size={14} /> Passes
                 </button>
 
                 <button

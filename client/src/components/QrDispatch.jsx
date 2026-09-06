@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Send, QrCode, Mail, CheckCircle2, AlertCircle, RefreshCw, Sparkles, Layers, Calendar, Search } from 'lucide-react';
+import { Send, QrCode, Mail, CheckCircle2, AlertCircle, RefreshCw, Sparkles, Layers, Calendar, Search, Users, Upload } from 'lucide-react';
 import api from '../api/axios';
 
-export default function QrDispatch({ selectedEventForDispatch }) {
+export default function QrDispatch({ selectedEventForDispatch, onNavigateToStudents }) {
   const [events, setEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [passes, setPasses] = useState([]);
@@ -115,7 +115,7 @@ export default function QrDispatch({ selectedEventForDispatch }) {
       setProgress(0);
       setDispatchStatus({
         type: 'danger',
-        message: err.response?.data?.message || 'Failed to dispatch email passes.'
+        message: err.response?.data?.error || err.response?.data?.message || 'Failed to dispatch pass emails.'
       });
     } finally {
       setLoading(false);
@@ -160,9 +160,19 @@ export default function QrDispatch({ selectedEventForDispatch }) {
           <p>Generate isolated QR passes for each event. Each pass is valid across all days of that event only.</p>
         </div>
 
-        <button className="btn btn-secondary" onClick={() => loadEventPasses(selectedEventId)}>
-          <RefreshCw size={16} /> Refresh Passes
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {selectedEvent && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => onNavigateToStudents && onNavigateToStudents(selectedEvent)}
+            >
+              <Users size={16} /> Manage Event Students
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={() => loadEventPasses(selectedEventId)}>
+            <RefreshCw size={16} /> Refresh Passes
+          </button>
+        </div>
       </div>
 
       {/* Event Selection Card */}
@@ -186,7 +196,7 @@ export default function QrDispatch({ selectedEventForDispatch }) {
               ) : (
                 events.map(ev => (
                   <option key={ev.id} value={ev.id}>
-                    {ev.title} ({ev.sessions?.length || 0} Lecture Days)
+                    {ev.title} ({ev.total_enrolled || 0} Students)
                   </option>
                 ))
               )}
@@ -218,7 +228,7 @@ export default function QrDispatch({ selectedEventForDispatch }) {
             <CheckCircle2 size={24} />
           </div>
           <div className="stat-info">
-            <h4>Event Passes Sent (qr_sent)</h4>
+            <h4>Event Passes Sent</h4>
             <div className="value" style={{ color: 'var(--success)' }}>{qrSentCount}</div>
           </div>
         </div>
@@ -254,13 +264,13 @@ export default function QrDispatch({ selectedEventForDispatch }) {
             disabled={loading || !selectedEventId}
             style={{ padding: '12px 20px' }}
           >
-            <QrCode size={18} /> Generate Event Pass Tokens
+            <QrCode size={18} /> Generate Passes for All Enrolled
           </button>
 
           <button
             className="btn btn-primary"
             onClick={handleSendEmails}
-            disabled={loading || !selectedEventId}
+            disabled={loading || !selectedEventId || passes.length === 0}
             style={{ padding: '12px 24px' }}
           >
             <Send size={18} /> 🚀 Dispatch {selectedEvent?.title ? `"${selectedEvent.title}"` : 'Event'} Passes via Email
@@ -341,8 +351,28 @@ export default function QrDispatch({ selectedEventForDispatch }) {
           <tbody>
             {filteredPasses.length === 0 ? (
               <tr>
-                <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                  {passes.length === 0 ? 'No event passes found. Click "Generate Event Pass Tokens" above.' : 'No students match your search.'}
+                <td colSpan="6" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+                  {passes.length === 0 ? (
+                    <div>
+                      <QrCode size={36} color="var(--primary)" style={{ opacity: 0.7, margin: '0 auto 8px' }} />
+                      <p style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--text-main)', margin: '0 0 4px' }}>
+                        No passes registered for "{selectedEvent?.title || 'this event'}" yet.
+                      </p>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 1rem' }}>
+                        Upload students for this event or generate passes from existing students.
+                      </p>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+                        <button className="btn btn-primary btn-sm" onClick={() => onNavigateToStudents && onNavigateToStudents(selectedEvent)}>
+                          <Upload size={14} /> Upload / Enroll Students for this Event
+                        </button>
+                        <button className="btn btn-secondary btn-sm" onClick={handleGeneratePasses}>
+                          <QrCode size={14} /> Generate Passes for All
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    'No students match your search.'
+                  )}
                 </td>
               </tr>
             ) : (
