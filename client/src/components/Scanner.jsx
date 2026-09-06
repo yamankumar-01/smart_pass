@@ -255,19 +255,29 @@ export default function Scanner({ activeSession, setActiveSession }) {
                 }}
               >
                 {sessions.length === 0 ? (
-                  <option value="">No sessions available</option>
+                  <option value="">No lecture sessions available</option>
                 ) : (
-                  sessions.map(s => {
-                    const label = s.event_title
-                      ? `[${s.event_title}] ${s.day_label || 'Day'}: ${s.topic || s.title} (${s.date})`
-                      : `${s.title || s.name} (${s.date})`;
-                    const isClosed = !s.is_active || s.status === 'CLOSED';
-                    return (
-                      <option key={s.id} value={s.id}>
-                        {label} {isClosed ? '[CLOSED]' : ''}
-                      </option>
-                    );
-                  })
+                  Object.entries(
+                    sessions.reduce((acc, s) => {
+                      const groupName = s.event_title ? `Event: ${s.event_title}` : 'Standalone Lectures';
+                      if (!acc[groupName]) acc[groupName] = [];
+                      acc[groupName].push(s);
+                      return acc;
+                    }, {})
+                  ).map(([groupName, groupList]) => (
+                    <optgroup key={groupName} label={`📌 ${groupName}`}>
+                      {groupList.map(s => {
+                        const isClosed = !s.is_active || s.status === 'CLOSED';
+                        const prefix = s.day_label ? `${s.day_label} - ` : '';
+                        const name = s.topic || s.title || s.name || 'Lecture Session';
+                        return (
+                          <option key={s.id} value={s.id}>
+                            {prefix}{name} ({s.date}) {isClosed ? '🔒 [CLOSED]' : '⚡ [ACTIVE]'}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  ))
                 )}
               </select>
             </div>
