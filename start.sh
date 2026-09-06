@@ -7,23 +7,33 @@ python backend/manage.py migrate --noinput
 echo "==> Collecting static files..."
 python backend/manage.py collectstatic --noinput
 
-echo "==> Ensuring default admin superuser exists..."
+echo "==> Ensuring default users exist..."
 python backend/manage.py shell -c "
 from django.contrib.auth.models import User
-import os
 
-username = os.getenv('DJANGO_SUPERUSER_USERNAME', 'smartpass')
-email = os.getenv('DJANGO_SUPERUSER_EMAIL', 'smartpass@example.com')
-password = os.getenv('DJANGO_SUPERUSER_PASSWORD', 'src@2019')
-
-user = User.objects.filter(username=username).first()
-if not user:
-    User.objects.create_superuser(username=username, email=email, password=password)
-    print(f'==> Created default admin superuser: {username}')
+# 1. Admin user (superuser) - username: adminpass
+admin_user = User.objects.filter(username='adminpass').first()
+if not admin_user:
+    User.objects.create_superuser(username='adminpass', email='admin@smartpass.app', password='src@2019')
+    print('==> Created admin superuser: adminpass')
 else:
-    user.set_password(password)
-    user.save()
-    print(f'==> Updated/Verified admin superuser: {username}')
+    admin_user.set_password('src@2019')
+    admin_user.is_staff = True
+    admin_user.is_superuser = True
+    admin_user.save()
+    print('==> Verified admin superuser: adminpass')
+
+# 2. Volunteer user (regular) - username: smartpass
+vol_user = User.objects.filter(username='smartpass').first()
+if not vol_user:
+    User.objects.create_user(username='smartpass', email='volunteer@smartpass.app', password='src@2019')
+    print('==> Created volunteer user: smartpass')
+else:
+    vol_user.set_password('src@2019')
+    vol_user.is_staff = False
+    vol_user.is_superuser = False
+    vol_user.save()
+    print('==> Verified volunteer user: smartpass')
 "
 
 echo "==> Checking and seeding initial student and event records..."

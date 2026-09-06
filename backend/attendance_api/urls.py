@@ -18,7 +18,8 @@ from .views import (
     current_user_view,
     change_password_view,
     smtp_settings_view,
-    test_send_email_view
+    test_send_email_view,
+    custom_token_obtain_pair_view
 )
 
 router = DefaultRouter()
@@ -29,7 +30,7 @@ router.register(r'emails', EmailLogViewSet, basename='email')
 
 urlpatterns = [
     # JWT Authentication Endpoints
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/', custom_token_obtain_pair_view, name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('me/', current_user_view, name='current_user'),
     path('change-password/', change_password_view, name='change_password'),
