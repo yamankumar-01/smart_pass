@@ -13,7 +13,13 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return Boolean(sessionStorage.getItem('accessToken'));
   });
-  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  const [userRole, setUserRole] = useState(() => {
+    const savedRole = sessionStorage.getItem('role');
+    if (savedRole) return savedRole;
+    const user = (sessionStorage.getItem('username') || '').toLowerCase();
+    return (user === 'adminpass' || user === 'admin') ? 'admin' : 'volunteer';
+  });
   
   // Persist active tab across browser reloads
   const validTabs = ['scanner', 'events', 'students', 'dispatch', 'reports', 'emails', 'settings'];
@@ -36,8 +42,11 @@ export default function App() {
   const [selectedEventForStudents, setSelectedEventForStudents] = useState(null);
 
   const setActiveTab = (tab) => {
-    if (!isAuthenticated && tab !== 'scanner') {
-      setShowLoginModal(true);
+    // If volunteer, only scanner is allowed
+    if (userRole !== 'admin' && tab !== 'scanner') {
+      setActiveTabState('scanner');
+      sessionStorage.setItem('activeTab', 'scanner');
+      window.location.hash = 'scanner';
       return;
     }
     setActiveTabState(tab);
@@ -46,16 +55,18 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Clear any legacy persistent tokens from localStorage
+    // Clean any legacy persistent tokens from localStorage
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('username');
+    localStorage.removeItem('role');
 
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
       if (validTabs.includes(hash)) {
-        if (!isAuthenticated && hash !== 'scanner') {
-          setShowLoginModal(true);
+        if (userRole !== 'admin' && hash !== 'scanner') {
+          setActiveTabState('scanner');
+          sessionStorage.setItem('activeTab', 'scanner');
           return;
         }
         setActiveTabState(hash);
@@ -65,22 +76,26 @@ export default function App() {
 
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [isAuthenticated]);
+  }, [userRole]);
 
   const handleLogout = () => {
     sessionStorage.clear();
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('username');
+    localStorage.removeItem('role');
     localStorage.removeItem('activeTab');
     setIsAuthenticated(false);
+    setUserRole('volunteer');
     setActiveTabState('scanner');
     window.location.hash = 'scanner';
   };
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = (detectedRole) => {
+    const finalRole = detectedRole || (sessionStorage.getItem('username') === 'adminpass' || sessionStorage.getItem('username') === 'admin' ? 'admin' : 'volunteer');
+    setUserRole(finalRole);
     setIsAuthenticated(true);
-    setShowLoginModal(false);
+    setActiveTabState('scanner');
   };
 
   const handleSelectSessionForScan = (session) => {
@@ -103,22 +118,26 @@ export default function App() {
     setActiveTab('students');
   };
 
+  // If not logged in, show Unified Login Portal
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={handleLoginSuccess} isModal={false} />;
+  }
+
   return (
     <div className="app-layout">
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        isAuthenticated={isAuthenticated}
-        onOpenLogin={() => setShowLoginModal(true)}
+        userRole={userRole}
         onLogout={handleLogout}
       />
 
       <main className="main-content">
-        {(!isAuthenticated || activeTab === 'scanner') && (
+        {activeTab === 'scanner' && (
           <Scanner activeSession={activeSession} setActiveSession={setActiveSession} />
         )}
         
-        {isAuthenticated && activeTab === 'events' && (
+        {userRole === 'admin' && activeTab === 'events' && (
           <EventManager
             onSelectSessionForScan={handleSelectSessionForScan}
             onSelectEventForReport={handleSelectEventForReport}
@@ -127,18 +146,18 @@ export default function App() {
           />
         )}
         
-        {isAuthenticated && activeTab === 'students' && (
+        {userRole === 'admin' && activeTab === 'students' && (
           <StudentManager initialEventFilter={selectedEventForStudents} />
         )}
         
-        {isAuthenticated && activeTab === 'dispatch' && (
+        {userRole === 'admin' && activeTab === 'dispatch' && (
           <QrDispatch
             selectedEventForDispatch={selectedEventForDispatch}
             onNavigateToStudents={handleSelectEventForStudents}
           />
         )}
         
-        {isAuthenticated && activeTab === 'reports' && (
+        {userRole === 'admin' && activeTab === 'reports' && (
           <AttendanceReports
             activeSession={activeSession}
             selectedEventForReport={selectedEventForReport}
@@ -146,23 +165,14 @@ export default function App() {
           />
         )}
         
-        {isAuthenticated && activeTab === 'emails' && (
+        {userRole === 'admin' && activeTab === 'emails' && (
           <EmailInbox />
         )}
         
-        {isAuthenticated && activeTab === 'settings' && (
+        {userRole === 'admin' && activeTab === 'settings' && (
           <SmtpSettings />
         )}
       </main>
-
-      {/* Admin Login Modal Overlay */}
-      {showLoginModal && (
-        <Login
-          isModal={true}
-          onClose={() => setShowLoginModal(false)}
-          onLoginSuccess={handleLoginSuccess}
-        />
-      )}
     </div>
   );
 }

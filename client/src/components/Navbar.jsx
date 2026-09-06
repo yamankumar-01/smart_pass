@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { QrCode, Calendar, Users, Send, FileSpreadsheet, Mail, Settings, LogOut, Shield, Menu, X, LogIn } from 'lucide-react';
+import { QrCode, Calendar, Users, Send, FileSpreadsheet, Mail, Settings, LogOut, Shield, Menu, X, UserCheck } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab, isAuthenticated, onOpenLogin, onLogout }) {
+export default function Navbar({ activeTab, setActiveTab, userRole, onLogout }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const adminNavItems = [
-    { id: 'scanner', label: 'Live Scanner', icon: QrCode },
-    { id: 'events', label: 'Events & Days', icon: Calendar },
-    { id: 'students', label: 'Student Upload', icon: Users },
-    { id: 'dispatch', label: 'QR Pass Dispatch', icon: Send },
-    { id: 'reports', label: 'Reports & Export', icon: FileSpreadsheet },
-    { id: 'emails', label: 'Email Logs', icon: Mail },
-    { id: 'settings', label: 'SMTP Config', icon: Settings }
+  const allNavItems = [
+    { id: 'scanner', label: 'Live Scanner', icon: QrCode, roles: ['admin', 'volunteer'] },
+    { id: 'events', label: 'Events & Days', icon: Calendar, roles: ['admin'] },
+    { id: 'students', label: 'Student Upload', icon: Users, roles: ['admin'] },
+    { id: 'dispatch', label: 'QR Pass Dispatch', icon: Send, roles: ['admin'] },
+    { id: 'reports', label: 'Reports & Export', icon: FileSpreadsheet, roles: ['admin'] },
+    { id: 'emails', label: 'Email Logs', icon: Mail, roles: ['admin'] },
+    { id: 'settings', label: 'SMTP Config', icon: Settings, roles: ['admin'] }
   ];
 
-  const adminName = sessionStorage.getItem('username') || localStorage.getItem('username') || 'admin';
+  const visibleNavItems = allNavItems.filter((item) => item.roles.includes(userRole));
+  const currentUsername = sessionStorage.getItem('username') || (userRole === 'admin' ? 'adminpass' : 'smartpass');
+  const isAdmin = userRole === 'admin';
 
   const handleSelectTab = (id) => {
     setActiveTab(id);
@@ -45,61 +47,52 @@ export default function Navbar({ activeTab, setActiveTab, isAuthenticated, onOpe
         </div>
 
         {/* Desktop Navigation */}
-        {isAuthenticated ? (
-          <nav className="desktop-nav">
-            <ul className="nav-links">
-              {adminNavItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <li key={item.id}>
-                    <button
-                      className={`nav-btn ${isActive ? 'active' : ''}`}
-                      onClick={() => handleSelectTab(item.id)}
-                    >
-                      <Icon size={17} />
-                      <span>{item.label}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
-        ) : (
-          <div className="desktop-nav" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="badge badge-success" style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <QrCode size={14} /> Scanner Mode
-            </span>
+        <nav className="desktop-nav">
+          <ul className="nav-links">
+            {visibleNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <li key={item.id}>
+                  <button
+                    className={`nav-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => handleSelectTab(item.id)}
+                  >
+                    <Icon size={17} />
+                    <span>{item.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+
+        {/* Desktop User Info & Logout */}
+        <div className="desktop-user-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {isAdmin ? (
+              <>
+                <Shield size={15} color="var(--success)" />
+                <span style={{ fontWeight: 700, color: 'var(--success)' }}>Admin: {currentUsername}</span>
+                <span className="badge badge-success" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>Full Access</span>
+              </>
+            ) : (
+              <>
+                <UserCheck size={15} color="var(--primary)" />
+                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Volunteer: {currentUsername}</span>
+                <span className="badge" style={{ fontSize: '0.7rem', padding: '2px 6px', background: 'rgba(79, 70, 229, 0.2)', color: '#818cf8' }}>Scanner Only</span>
+              </>
+            )}
           </div>
-        )}
 
-        {/* Desktop Admin & Logout / Login Toggle */}
-        <div className="desktop-user-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {isAuthenticated ? (
-            <>
-              <div style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
-                <Shield size={14} color="var(--success)" />
-                <span style={{ fontWeight: 600 }}>{adminName}</span>
-              </div>
-
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={onLogout}
-                title="Sign out of Admin Session"
-              >
-                <LogOut size={13} /> Exit Admin
-              </button>
-            </>
-          ) : (
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={onOpenLogin}
-              style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}
-              title="Open Admin Portal"
-            >
-              <LogIn size={15} /> Admin Portal
-            </button>
-          )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={onLogout}
+            title="Sign out and return to Login"
+            style={{ fontWeight: 600 }}
+          >
+            <LogOut size={14} /> Sign Out
+          </button>
         </div>
 
         {/* Mobile Hamburger Toggle Button */}
@@ -117,18 +110,21 @@ export default function Navbar({ activeTab, setActiveTab, isAuthenticated, onOpe
         <div className="mobile-menu-overlay" onClick={() => setMobileMenuOpen(false)}>
           <div className="mobile-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="mobile-drawer-header">
-              {isAuthenticated ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Shield size={16} color="var(--success)" />
-                  <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{adminName}</span>
-                  <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Admin</span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <QrCode size={16} color="var(--primary)" />
-                  <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>Scanner Mode</span>
-                </div>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isAdmin ? (
+                  <>
+                    <Shield size={16} color="var(--success)" />
+                    <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{currentUsername}</span>
+                    <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Super Admin</span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck size={16} color="var(--primary)" />
+                    <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{currentUsername}</span>
+                    <span className="badge" style={{ fontSize: '0.7rem', background: 'rgba(79, 70, 229, 0.2)', color: '#818cf8' }}>Volunteer</span>
+                  </>
+                )}
+              </div>
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => setMobileMenuOpen(false)}
@@ -138,56 +134,36 @@ export default function Navbar({ activeTab, setActiveTab, isAuthenticated, onOpe
               </button>
             </div>
 
-            {isAuthenticated ? (
-              <ul className="mobile-nav-list">
-                {adminNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-                  return (
-                    <li key={item.id}>
-                      <button
-                        className={`mobile-nav-btn ${isActive ? 'active' : ''}`}
-                        onClick={() => handleSelectTab(item.id)}
-                      >
-                        <Icon size={20} />
-                        <span>{item.label}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div style={{ padding: '1rem 0' }}>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-                  Currently running in direct Scanner Mode for scanning student QR passes.
-                </p>
-                <button
-                  className="btn btn-primary"
-                  style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onOpenLogin();
-                  }}
-                >
-                  <LogIn size={18} /> Admin Portal Login
-                </button>
-              </div>
-            )}
+            <ul className="mobile-nav-list">
+              {visibleNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <li key={item.id}>
+                    <button
+                      className={`mobile-nav-btn ${isActive ? 'active' : ''}`}
+                      onClick={() => handleSelectTab(item.id)}
+                    >
+                      <Icon size={20} />
+                      <span>{item.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
 
-            {isAuthenticated && (
-              <div style={{ marginTop: 'auto', paddingTop: '1.25rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button
-                  className="btn btn-danger"
-                  style={{ width: '100%', justifyContent: 'center' }}
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    onLogout();
-                  }}
-                >
-                  <LogOut size={16} /> Exit Admin
-                </button>
-              </div>
-            )}
+            <div style={{ marginTop: 'auto', paddingTop: '1.25rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                className="btn btn-danger"
+                style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  onLogout();
+                }}
+              >
+                <LogOut size={16} /> Sign Out
+              </button>
+            </div>
           </div>
         </div>
       )}

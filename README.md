@@ -133,10 +133,12 @@ npm run dev
 
 ---
 
-## 🔑 Admin Login Credentials
+## 🔑 Login Credentials
 
-- **Username**: `admin`
-- **Password**: `admin123`
+| Role | Username | Password | Access Level |
+| :--- | :--- | :--- | :--- |
+| **Volunteer (Normal)** | `smartpass` | `src@2019` | Direct Live Scanner & Session Selection Only |
+| **Super Admin** | `adminpass` | `src@2019` | Full Control (Events, CSV Upload, QR Dispatch, Reports, SMTP) |
 
 ---
 

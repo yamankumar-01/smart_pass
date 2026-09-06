@@ -29,12 +29,15 @@ from django.contrib.auth.models import User
 @permission_classes([AllowAny])
 def current_user_view(request):
     if request.user and request.user.is_authenticated:
+        is_admin = bool(request.user.is_superuser or request.user.is_staff or request.user.username.lower() in ('adminpass', 'admin'))
         return Response({
             'username': request.user.username,
             'email': request.user.email,
-            'is_staff': request.user.is_staff
+            'is_staff': request.user.is_staff,
+            'is_superuser': request.user.is_superuser,
+            'role': 'admin' if is_admin else 'volunteer'
         })
-    return Response({'username': 'Anonymous', 'is_authenticated': False})
+    return Response({'username': 'Anonymous', 'is_authenticated': False, 'role': 'anonymous'})
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
