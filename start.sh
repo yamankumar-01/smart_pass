@@ -26,6 +26,21 @@ else:
     print(f'==> Updated/Verified admin superuser: {username}')
 "
 
+echo "==> Checking and seeding initial student and event records..."
+python backend/manage.py shell -c "
+from attendance_api.models import Student
+from django.core.management import call_command
+import os
+
+if Student.objects.count() == 0 and os.path.exists('backend/seed_data.json'):
+    try:
+        print('==> Seeding initial students and events from seed_data.json...')
+        call_command('loaddata', 'backend/seed_data.json')
+        print(f'==> Successfully seeded {Student.objects.count()} students!')
+    except Exception as e:
+        print(f'==> Seed note: {e}')
+"
+
 PORT="${PORT:-8000}"
 echo "==> Starting Gunicorn on port $PORT..."
 exec gunicorn attendance_project.wsgi:application \
