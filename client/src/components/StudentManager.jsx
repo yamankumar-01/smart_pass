@@ -948,7 +948,12 @@ export default function StudentManager({ initialEventFilter }) {
               <img
                 src={selectedStudentQr.qr_code_image || `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${selectedStudentQr.unique_token || selectedStudentQr.token}`}
                 alt="Student QR Code"
-                style={{ width: '220px', height: '220px', display: 'block' }}
+                onError={(e) => {
+                  e.target.onerror = null;
+                  const fallbackToken = selectedStudentQr.unique_token || selectedStudentQr.token;
+                  e.target.src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${fallbackToken}`;
+                }}
+                style={{ width: '220px', height: '220px', display: 'block', margin: '0 auto' }}
               />
             </div>
 
