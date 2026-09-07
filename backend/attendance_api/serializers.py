@@ -101,8 +101,10 @@ class EmailLogSerializer(serializers.ModelSerializer):
 class SMTPSettingSerializer(serializers.ModelSerializer):
     class Meta:
         model = SMTPSetting
-        fields = ['id', 'host', 'port', 'use_tls', 'user', 'password', 'from_name', 'from_email', 'is_active']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ['id', 'provider', 'resend_api_key', 'host', 'port', 'use_tls', 'user', 'password', 'from_name', 'from_email', 'is_active']
+        extra_kwargs = {
+            'password': {'write_only': True}
+        }
 
 class ScanInputSerializer(serializers.Serializer):
     token = serializers.CharField(max_length=100)

@@ -67,7 +67,6 @@ def send_email_via_resend(api_key, from_addr, to_email, subject, html_body, qr_r
     }
 
     if qr_raw_bytes:
-        # Both contentId and content_id are supplied for maximum client compatibility
         payload["attachments"] = [
             {
                 "filename": qr_filename,
@@ -103,66 +102,104 @@ def send_email_via_resend(api_key, from_addr, to_email, subject, html_body, qr_r
     except Exception as e:
         return False, f"Resend Network Error: {str(e)}"
 
+def get_all_active_mail_senders():
+    """
+    Returns a list of all active sender configurations for multi-account load balancing.
+    Supports rotating across multiple Gmail SMTP accounts or Resend keys.
+    """
+    active_configs = list(SMTPSetting.objects.filter(is_active=True).order_by('id'))
+    senders = []
+    
+    for cfg in active_configs:
+        if cfg.provider == 'resend' and cfg.resend_api_key:
+            from_email = cfg.from_email.strip() if cfg.from_email else "onboarding@resend.dev"
+            from_name = cfg.from_name.strip() if cfg.from_name else "Aarambh Attendance System"
+            senders.append({
+                'provider': 'resend',
+                'resend_key': cfg.resend_api_key.strip(),
+                'from_addr': f"{from_name} <{from_email}>",
+                'account_id': cfg.id,
+                'user': cfg.from_email or 'Resend API'
+            })
+        elif cfg.provider == 'smtp' and cfg.user and cfg.password:
+            from_addr = f"{cfg.from_name} <{cfg.from_email or cfg.user}>"
+            conn = get_connection(
+                'django.core.mail.backends.smtp.EmailBackend',
+                host=cfg.host,
+                port=cfg.port,
+                username=cfg.user,
+                password=cfg.password,
+                use_tls=cfg.use_tls,
+                timeout=8,
+                fail_silently=False
+            )
+            senders.append({
+                'provider': 'smtp',
+                'conn': conn,
+                'from_addr': from_addr,
+                'account_id': cfg.id,
+                'user': cfg.user
+            })
+
+    # If no active DB senders, check environment variables
+    if not senders:
+        env_resend = os.getenv('RESEND_API_KEY', '').strip()
+        if env_resend:
+            senders.append({
+                'provider': 'resend',
+                'resend_key': env_resend,
+                'from_addr': os.getenv('DEFAULT_FROM_EMAIL', 'Aarambh Attendance System <onboarding@resend.dev>'),
+                'account_id': 0,
+                'user': 'Env Resend'
+            })
+        else:
+            env_user = os.getenv('EMAIL_HOST_USER', '')
+            env_pass = os.getenv('EMAIL_HOST_PASSWORD', '')
+            if env_user and env_pass:
+                conn = get_connection(
+                    'django.core.mail.backends.smtp.EmailBackend',
+                    host=os.getenv('EMAIL_HOST', 'smtp.gmail.com'),
+                    port=int(os.getenv('EMAIL_PORT', 587)),
+                    username=env_user,
+                    password=env_pass,
+                    use_tls=os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true',
+                    timeout=8,
+                    fail_silently=False
+                )
+                senders.append({
+                    'provider': 'smtp',
+                    'conn': conn,
+                    'from_addr': os.getenv('DEFAULT_FROM_EMAIL', f'Campus Attendance <{env_user}>'),
+                    'account_id': 0,
+                    'user': env_user
+                })
+            else:
+                conn = get_connection('django.core.mail.backends.console.EmailBackend')
+                senders.append({
+                    'provider': 'console',
+                    'conn': conn,
+                    'from_addr': settings.DEFAULT_FROM_EMAIL,
+                    'account_id': 0,
+                    'user': 'Console'
+                })
+
+    return senders
+
 def get_active_mail_connection():
     """
-    Retrieves email connection dynamically from DB SMTPSetting or .env file.
+    Backwards compatibility helper: returns the primary active sender.
     Returns (connection, from_email_address, provider, resend_key)
     """
-    smtp_cfg = SMTPSetting.objects.filter(is_active=True).first()
-    env_resend = os.getenv('RESEND_API_KEY', '').strip()
-    
-    # 1. Check Resend config in DB or environment
-    if smtp_cfg and (getattr(smtp_cfg, 'provider', 'resend') == 'resend' or getattr(smtp_cfg, 'resend_api_key', '')):
-        key = (smtp_cfg.resend_api_key or '').strip() or env_resend
-        from_email = smtp_cfg.from_email.strip() if smtp_cfg.from_email else "onboarding@resend.dev"
-        from_name = smtp_cfg.from_name.strip() if smtp_cfg.from_name else "Aarambh Attendance System"
-        from_addr = f"{from_name} <{from_email}>"
-        return None, from_addr, 'resend', key
-    elif env_resend:
-        from_addr = os.getenv('DEFAULT_FROM_EMAIL', 'Aarambh Attendance System <onboarding@resend.dev>')
-        return None, from_addr, 'resend', env_resend
+    senders = get_all_active_mail_senders()
+    primary = senders[0] if senders else None
+    if not primary:
+        return None, settings.DEFAULT_FROM_EMAIL, 'console', None
+    return primary.get('conn'), primary.get('from_addr'), primary.get('provider'), primary.get('resend_key')
 
-    # 2. Check traditional SMTP in DB
-    if smtp_cfg and smtp_cfg.user and smtp_cfg.password:
-        from_addr = f"{smtp_cfg.from_name} <{smtp_cfg.from_email or smtp_cfg.user}>"
-        conn = get_connection(
-            'django.core.mail.backends.smtp.EmailBackend',
-            host=smtp_cfg.host,
-            port=smtp_cfg.port,
-            username=smtp_cfg.user,
-            password=smtp_cfg.password,
-            use_tls=smtp_cfg.use_tls,
-            timeout=8,
-            fail_silently=False
-        )
-        return conn, from_addr, 'smtp', None
-
-    # 3. Fallback to .env configuration if present
-    env_user = os.getenv('EMAIL_HOST_USER', '')
-    env_pass = os.getenv('EMAIL_HOST_PASSWORD', '')
-    if env_user and env_pass:
-        from_addr = os.getenv('DEFAULT_FROM_EMAIL', f'Campus Attendance <{env_user}>')
-        conn = get_connection(
-            'django.core.mail.backends.smtp.EmailBackend',
-            host=os.getenv('EMAIL_HOST', 'smtp.gmail.com'),
-            port=int(os.getenv('EMAIL_PORT', 587)),
-            username=env_user,
-            password=env_pass,
-            use_tls=os.getenv('EMAIL_USE_TLS', 'True').lower() == 'true',
-            timeout=8,
-            fail_silently=False
-        )
-        return conn, from_addr, 'smtp', None
-
-    # Fallback to console backend if SMTP not configured
-    from_addr = settings.DEFAULT_FROM_EMAIL
-    conn = get_connection('django.core.mail.backends.console.EmailBackend')
-    return conn, from_addr, 'console', None
-
-def send_student_qr_email(student, conn=None, from_addr=None):
+def send_student_qr_email(student, conn=None, from_addr=None, specific_sender=None):
     """
     Sends an automated email containing student pass info and inline QR code.
-    Compatible with Gmail mobile app / desktop via CID inline attachment.
+    Can accept a specific sender configuration or automatically pick from active senders.
     """
     token_str = str(student.unique_token)
     file_content, qr_data_url = generate_qr_code(token_str)
@@ -220,16 +257,20 @@ def send_student_qr_email(student, conn=None, from_addr=None):
     </div>
     """
 
-    c, fa, provider, resend_key = get_active_mail_connection()
-    conn = conn or c
-    from_addr = from_addr or fa
+    if specific_sender:
+        sender_cfg = specific_sender
+    else:
+        senders = get_all_active_mail_senders()
+        sender_cfg = senders[0] if senders else {'provider': 'console', 'conn': None, 'from_addr': settings.DEFAULT_FROM_EMAIL}
 
+    provider = sender_cfg.get('provider')
+    from_addr = from_addr or sender_cfg.get('from_addr')
     status = 'SENT'
     error_msg = ''
 
-    if provider == 'resend' and resend_key:
+    if provider == 'resend' and sender_cfg.get('resend_key'):
         ok, res_info = send_email_via_resend(
-            api_key=resend_key,
+            api_key=sender_cfg['resend_key'],
             from_addr=from_addr,
             to_email=student.email,
             subject=subject,
@@ -247,6 +288,7 @@ def send_student_qr_email(student, conn=None, from_addr=None):
             error_msg = res_info
     else:
         try:
+            conn = conn or sender_cfg.get('conn')
             msg = EmailMultiAlternatives(
                 subject=subject,
                 body=f"Hello {student.name}, show this QR code at the attendance scanner. Your pass token is {token_str}",
@@ -286,7 +328,7 @@ def send_student_qr_email(student, conn=None, from_addr=None):
     )
     return log_entry
 
-def send_event_qr_email(event_pass, conn=None, from_addr=None):
+def send_event_qr_email(event_pass, conn=None, from_addr=None, specific_sender=None):
     """
     Sends an event-scoped automated email containing the student's unique event pass.
     Embeds QR code inline inside the card via CID for Gmail mobile app.
@@ -367,16 +409,20 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None):
     </div>
     """
 
-    c, fa, provider, resend_key = get_active_mail_connection()
-    conn = conn or c
-    from_addr = from_addr or fa
+    if specific_sender:
+        sender_cfg = specific_sender
+    else:
+        senders = get_all_active_mail_senders()
+        sender_cfg = senders[0] if senders else {'provider': 'console', 'conn': None, 'from_addr': settings.DEFAULT_FROM_EMAIL}
 
+    provider = sender_cfg.get('provider')
+    from_addr = from_addr or sender_cfg.get('from_addr')
     status = 'SENT'
     error_msg = ''
 
-    if provider == 'resend' and resend_key:
+    if provider == 'resend' and sender_cfg.get('resend_key'):
         ok, res_info = send_email_via_resend(
-            api_key=resend_key,
+            api_key=sender_cfg['resend_key'],
             from_addr=from_addr,
             to_email=student.email,
             subject=subject,
@@ -393,6 +439,7 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None):
             error_msg = res_info
     else:
         try:
+            conn = conn or sender_cfg.get('conn')
             msg = EmailMultiAlternatives(
                 subject=subject,
                 body=f"Hello {student.name}, here is your pass for {event.title}. Your pass token is {token_str}",
@@ -433,93 +480,105 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None):
 def send_batch_event_qr_emails(passes):
     """
     Ultra-fast batch event pass email sender.
-    Dispatches over parallel Resend HTTPS threads or parallel SMTP connections.
+    Distributes dispatch load round-robin across all active sender accounts (load-balanced).
     """
     if not passes:
         return {'sent_count': 0, 'failed_count': 0, 'errors': []}
 
-    c, from_addr, provider, resend_key = get_active_mail_connection()
+    senders = get_all_active_mail_senders()
+    if not senders:
+        return {'sent_count': 0, 'failed_count': len(passes), 'errors': ['No active email sender accounts configured.']}
 
-    if provider == 'resend' and resend_key:
-        def _send_single_resend(event_pass):
-            student = event_pass.student
-            event = event_pass.event
-            token_str = str(event_pass.event_token)
+    num_senders = len(senders)
 
-            file_content, qr_data_url = generate_qr_code(token_str)
-            qr_raw_bytes = file_content.file.getvalue()
+    def _send_single_item(item):
+        index, event_pass = item
+        # Round-robin: rotate through active senders so no single account hits daily limit
+        sender_cfg = senders[index % num_senders]
+        
+        student = event_pass.student
+        event = event_pass.event
+        token_str = str(event_pass.event_token)
 
-            subject = f"🎟️ Event Pass & QR Code - {event.title} - {student.name}"
+        file_content, qr_data_url = generate_qr_code(token_str)
+        qr_raw_bytes = file_content.file.getvalue()
 
-            scheduled_days_html = ""
-            for s in event.sessions.all().order_by('date', 'id'):
-                scheduled_days_html += f"""
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                  <td style="padding: 8px 10px; font-weight: 700; color: #4f46e5;">{s.day_label or 'Day'}</td>
-                  <td style="padding: 8px 10px; color: #1e293b;">{s.topic or s.title}</td>
-                  <td style="padding: 8px 10px; color: #64748b; font-size: 13px;">{s.date}</td>
-                </tr>
-                """
+        subject = f"🎟️ Event Pass & QR Code - {event.title} - {student.name}"
 
-            html_body = f"""
-            <div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
-              <div style="background-color: #4f46e5; padding: 24px 20px; text-align: center; color: #ffffff;">
-                <div style="display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; margin-bottom: 8px;">
-                  OFFICIAL EVENT PASS
-                </div>
-                <h1 style="margin: 6px 0 2px 0; font-size: 24px; font-weight: 800; color: #ffffff;">{event.title}</h1>
-                <p style="margin: 0; opacity: 0.9; font-size: 13px; color: #ffffff;">📅 {event.start_date} to {event.end_date}</p>
-              </div>
-
-              <div style="padding: 24px 20px; background-color: #ffffff;">
-                <p style="font-size: 16px; margin: 0 0 12px 0; color: #1e293b;">Hello <strong>{student.name}</strong>,</p>
-                <p style="font-size: 14px; margin: 0 0 16px 0; color: #475569; line-height: 1.5;">
-                  You have been registered for <strong>{event.title}</strong>. Your official scannable QR pass is embedded below.
-                </p>
-
-                <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 0 0 20px 0;">
-                  <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 13px;">
-                    📌 Reusable Pass: This single QR pass is valid for ALL lecture days of {event.title}.
-                  </p>
-                </div>
-
-                {f'''
-                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 0 0 20px 0;">
-                  <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Event Scheduled Lectures / Days:</h4>
-                  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                    {scheduled_days_html}
-                  </table>
-                </div>
-                ''' if scheduled_days_html else ''}
-
-                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
-                    <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Attendee:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
-                    <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
-                    <tr><td style="padding: 5px 0; color: #64748b;">Branch / Year:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
-                    <tr><td style="padding: 5px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
-                  </table>
-                </div>
-
-                <div style="text-align: center; margin: 24px 0;">
-                  <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;">
-                    <img src="cid:qr_code_image" alt="Event QR Code" width="220" height="220" style="display: block; width: 220px; height: 220px; margin: 0 auto; border: 0;" />
-                  </div>
-                  <p style="font-size: 13px; color: #64748b; margin: 10px 0 0 0; font-weight: 600;">
-                    Present this QR code during attendance check-in for this event.
-                  </p>
-                </div>
-
-                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
-                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
-                  Official Event Pass • Campus Attendance Gateway
-                </p>
-              </div>
-            </div>
+        scheduled_days_html = ""
+        for s in event.sessions.all().order_by('date', 'id'):
+            scheduled_days_html += f"""
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 8px 10px; font-weight: 700; color: #4f46e5;">{s.day_label or 'Day'}</td>
+              <td style="padding: 8px 10px; color: #1e293b;">{s.topic or s.title}</td>
+              <td style="padding: 8px 10px; color: #64748b; font-size: 13px;">{s.date}</td>
+            </tr>
             """
 
+        html_body = f"""
+        <div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
+          <div style="background-color: #4f46e5; padding: 24px 20px; text-align: center; color: #ffffff;">
+            <div style="display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; margin-bottom: 8px;">
+              OFFICIAL EVENT PASS
+            </div>
+            <h1 style="margin: 6px 0 2px 0; font-size: 24px; font-weight: 800; color: #ffffff;">{event.title}</h1>
+            <p style="margin: 0; opacity: 0.9; font-size: 13px; color: #ffffff;">📅 {event.start_date} to {event.end_date}</p>
+          </div>
+
+          <div style="padding: 24px 20px; background-color: #ffffff;">
+            <p style="font-size: 16px; margin: 0 0 12px 0; color: #1e293b;">Hello <strong>{student.name}</strong>,</p>
+            <p style="font-size: 14px; margin: 0 0 16px 0; color: #475569; line-height: 1.5;">
+              You have been registered for <strong>{event.title}</strong>. Your official scannable QR pass is embedded below.
+            </p>
+
+            <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 0 0 20px 0;">
+              <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 13px;">
+                📌 Reusable Pass: This single QR pass is valid for ALL lecture days of {event.title}.
+              </p>
+            </div>
+
+            {f'''
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 0 0 20px 0;">
+              <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Event Scheduled Lectures / Days:</h4>
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                {scheduled_days_html}
+              </table>
+            </div>
+            ''' if scheduled_days_html else ''}
+
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
+                <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Attendee:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
+                <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
+                <tr><td style="padding: 5px 0; color: #64748b;">Branch / Year:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
+                <tr><td style="padding: 5px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
+              </table>
+            </div>
+
+            <div style="text-align: center; margin: 24px 0;">
+              <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;">
+                <img src="cid:qr_code_image" alt="Event QR Code" width="220" height="220" style="display: block; width: 220px; height: 220px; margin: 0 auto; border: 0;" />
+              </div>
+              <p style="font-size: 13px; color: #64748b; margin: 10px 0 0 0; font-weight: 600;">
+                Present this QR code during attendance check-in for this event.
+              </p>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+            <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
+              Official Event Pass • Campus Attendance Gateway
+            </p>
+          </div>
+        </div>
+        """
+
+        provider = sender_cfg.get('provider')
+        from_addr = sender_cfg.get('from_addr')
+        web_inbox_html = html_body.replace('cid:qr_code_image', qr_data_url)
+
+        if provider == 'resend' and sender_cfg.get('resend_key'):
             ok, res_info = send_email_via_resend(
-                api_key=resend_key,
+                api_key=sender_cfg['resend_key'],
                 from_addr=from_addr,
                 to_email=student.email,
                 subject=subject,
@@ -527,9 +586,6 @@ def send_batch_event_qr_emails(passes):
                 qr_raw_bytes=qr_raw_bytes,
                 qr_filename=f"event_pass_{event.id}_{student.id}.png"
             )
-
-            web_inbox_html = html_body.replace('cid:qr_code_image', qr_data_url)
-
             if ok:
                 event_pass.qr_sent = True
                 event_pass.save(update_fields=['qr_sent'])
@@ -553,130 +609,27 @@ def send_batch_event_qr_emails(passes):
                     status='FAILED',
                     error_message=res_info
                 )
+        else:
+            try:
+                conn = sender_cfg.get('conn')
+                single_msg = EmailMultiAlternatives(
+                    subject=subject,
+                    body=f"Pass for {event_pass.event.title}",
+                    from_email=from_addr,
+                    to=[student.email],
+                    connection=conn
+                )
+                single_msg.attach_alternative(html_body, "text/html")
+                mime_img = MIMEImage(qr_raw_bytes)
+                mime_img.add_header('Content-ID', '<qr_code_image>')
+                mime_img.add_header('Content-Disposition', 'inline', filename=f"event_pass_{event.id}_{student.id}.png")
+                single_msg.attach(mime_img)
+                single_msg.send(fail_silently=False)
 
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(_send_single_resend, passes))
-
-        return {
-            'sent_count': len(passes),
-            'failed_count': 0,
-            'errors': []
-        }
-
-    # Traditional SMTP bulk dispatch
-    def _send_chunk(chunk):
-        conn, from_addr, _, _ = get_active_mail_connection()
-        try:
-            conn.open()
-        except Exception:
-            pass
-
-        messages = []
-        log_data = []
-
-        for event_pass in chunk:
-            student = event_pass.student
-            event = event_pass.event
-            token_str = str(event_pass.event_token)
-
-            file_content, qr_data_url = generate_qr_code(token_str)
-            qr_raw_bytes = file_content.file.getvalue()
-
-            subject = f"🎟️ Event Pass & QR Code - {event.title} - {student.name}"
-
-            scheduled_days_html = ""
-            for s in event.sessions.all().order_by('date', 'id'):
-                scheduled_days_html += f"""
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                  <td style="padding: 8px 10px; font-weight: 700; color: #4f46e5;">{s.day_label or 'Day'}</td>
-                  <td style="padding: 8px 10px; color: #1e293b;">{s.topic or s.title}</td>
-                  <td style="padding: 8px 10px; color: #64748b; font-size: 13px;">{s.date}</td>
-                </tr>
-                """
-
-            html_body = f"""
-            <div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
-              <div style="background-color: #4f46e5; padding: 24px 20px; text-align: center; color: #ffffff;">
-                <div style="display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; margin-bottom: 8px;">
-                  OFFICIAL EVENT PASS
-                </div>
-                <h1 style="margin: 6px 0 2px 0; font-size: 24px; font-weight: 800; color: #ffffff;">{event.title}</h1>
-                <p style="margin: 0; opacity: 0.9; font-size: 13px; color: #ffffff;">📅 {event.start_date} to {event.end_date}</p>
-              </div>
-
-              <div style="padding: 24px 20px; background-color: #ffffff;">
-                <p style="font-size: 16px; margin: 0 0 12px 0; color: #1e293b;">Hello <strong>{student.name}</strong>,</p>
-                <p style="font-size: 14px; margin: 0 0 16px 0; color: #475569; line-height: 1.5;">
-                  You have been registered for <strong>{event.title}</strong>. Your official scannable QR pass is embedded below.
-                </p>
-
-                <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 0 0 20px 0;">
-                  <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 13px;">
-                    📌 Reusable Pass: This single QR pass is valid for ALL lecture days of {event.title}.
-                  </p>
-                </div>
-
-                {f'''
-                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 0 0 20px 0;">
-                  <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Event Scheduled Lectures / Days:</h4>
-                  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                    {scheduled_days_html}
-                  </table>
-                </div>
-                ''' if scheduled_days_html else ''}
-
-                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
-                    <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Attendee:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
-                    <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
-                    <tr><td style="padding: 5px 0; color: #64748b;">Branch / Year:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
-                    <tr><td style="padding: 4px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
-                  </table>
-                </div>
-
-                <div style="text-align: center; margin: 24px 0;">
-                  <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;">
-                    <img src="cid:qr_code_image" alt="Event QR Code" width="220" height="220" style="display: block; width: 220px; height: 220px; margin: 0 auto; border: 0;" />
-                  </div>
-                  <p style="font-size: 13px; color: #64748b; margin: 10px 0 0 0; font-weight: 600;">
-                    Present this QR code during attendance check-in for this event.
-                  </p>
-                </div>
-
-                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
-                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
-                  Official Event Pass • Campus Attendance Gateway
-                </p>
-              </div>
-            </div>
-            """
-
-            msg = EmailMultiAlternatives(
-                subject=subject,
-                body=f"Hello {student.name}, here is your pass for {event.title}. Your pass token is {token_str}",
-                from_email=from_addr,
-                to=[student.email],
-                connection=conn
-            )
-            msg.attach_alternative(html_body, "text/html")
-
-            mime_img = MIMEImage(qr_raw_bytes)
-            mime_img.add_header('Content-ID', '<qr_code_image>')
-            mime_img.add_header('Content-Disposition', 'inline', filename=f"event_pass_{event.id}_{student.id}.png")
-            msg.attach(mime_img)
-
-            messages.append(msg)
-            web_inbox_html = html_body.replace('cid:qr_code_image', qr_data_url)
-            log_data.append((event_pass, student, subject, web_inbox_html, token_str))
-
-        try:
-            conn.send_messages(messages)
-            for event_pass, student, subject, web_inbox_html, token_str in log_data:
                 event_pass.qr_sent = True
                 event_pass.save(update_fields=['qr_sent'])
                 EmailLog.objects.create(
-                    student=student if (student and student.pk) else None,
+                    student=student,
                     student_name=student.name,
                     email=student.email,
                     subject=subject,
@@ -684,53 +637,22 @@ def send_batch_event_qr_emails(passes):
                     qr_token=token_str,
                     status='SENT'
                 )
-        except Exception:
-            for event_pass, student, subject, web_inbox_html, token_str in log_data:
-                try:
-                    single_msg = EmailMultiAlternatives(
-                        subject=subject,
-                        body=f"Pass for {event_pass.event.title}",
-                        from_email=from_addr,
-                        to=[student.email],
-                        connection=conn
-                    )
-                    single_msg.attach_alternative(web_inbox_html, "text/html")
-                    single_msg.send(fail_silently=False)
-                    event_pass.qr_sent = True
-                    event_pass.save(update_fields=['qr_sent'])
-                    EmailLog.objects.create(
-                        student=student,
-                        student_name=student.name,
-                        email=student.email,
-                        subject=subject,
-                        body_html=web_inbox_html,
-                        qr_token=token_str,
-                        status='SENT'
-                    )
-                except Exception as e_indiv:
-                    EmailLog.objects.create(
-                        student=student,
-                        student_name=student.name,
-                        email=student.email,
-                        subject=subject,
-                        body_html=web_inbox_html,
-                        qr_token=token_str,
-                        status='FAILED',
-                        error_message=str(e_indiv)
-                    )
+            except Exception as e_indiv:
+                EmailLog.objects.create(
+                    student=student,
+                    student_name=student.name,
+                    email=student.email,
+                    subject=subject,
+                    body_html=web_inbox_html,
+                    qr_token=token_str,
+                    status='FAILED',
+                    error_message=str(e_indiv)
+                )
 
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-    # Split passes across up to 4 worker chunks for parallel dispatch
-    chunk_size = max(1, len(passes) // 4 + 1)
-    chunks = [passes[i:i + chunk_size] for i in range(0, len(passes), chunk_size)]
-    
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=min(4, len(chunks))) as pool:
-        list(pool.map(_send_chunk, chunks))
+    indexed_passes = list(enumerate(passes))
+    with ThreadPoolExecutor(max_workers=min(6, len(passes))) as pool:
+        list(pool.map(_send_single_item, indexed_passes))
 
     return {
         'sent_count': len(passes),

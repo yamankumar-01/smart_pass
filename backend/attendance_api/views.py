@@ -21,7 +21,7 @@ from .serializers import (
     EventSerializer,
     EventPassSerializer
 )
-from .utils import generate_qr_code, send_student_qr_email, send_event_qr_email, send_batch_event_qr_emails
+from .utils import generate_qr_code, send_student_qr_email, send_event_qr_email, send_batch_event_qr_emails, get_all_active_mail_senders
 
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -515,15 +515,23 @@ def bulk_send_emails_view(request):
         if not students:
             students = list(Student.objects.all())
 
+    senders = get_all_active_mail_senders()
+    num_senders = len(senders)
+
+    def _send_item(item):
+        idx, st = item
+        sender = senders[idx % num_senders] if num_senders else None
+        send_student_qr_email(st, specific_sender=sender)
+
     import threading
     def _worker():
-        with ThreadPoolExecutor(max_workers=min(5, len(students) or 1)) as executor:
-            list(executor.map(send_student_qr_email, students))
+        with ThreadPoolExecutor(max_workers=min(6, len(students) or 1)) as executor:
+            list(executor.map(_send_item, enumerate(students)))
 
     threading.Thread(target=_worker, daemon=True).start()
 
     return Response({
-        'message': f'⚡ Superfast Dispatch Started! Sending {len(students)} student passes in background.',
+        'message': f'⚡ Superfast Dispatch Started! Sending {len(students)} student passes in background across {max(1, num_senders)} sender accounts.',
         'sent_count': len(students),
         'failed_count': 0,
         'errors': []
@@ -1009,40 +1017,80 @@ class EmailLogViewSet(viewsets.ModelViewSet):
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
 def smtp_settings_view(request):
-    setting = SMTPSetting.objects.first()
+    all_settings = list(SMTPSetting.objects.all().order_by('id'))
+    active_count = sum(1 for s in all_settings if s.is_active)
     
     if request.method == 'GET':
-        if not setting:
-            return Response({
-                'provider': 'resend',
-                'resend_api_key': '',
-                'host': 'smtp.gmail.com',
-                'port': 587,
-                'use_tls': True,
-                'user': '',
-                'from_name': 'Aarambh Attendance System',
-                'from_email': 'onboarding@resend.dev',
-                'is_active': False
+        accounts_data = []
+        for s in all_settings:
+            accounts_data.append({
+                'id': s.id,
+                'provider': s.provider or 'resend',
+                'resend_api_key': s.resend_api_key or '',
+                'host': s.host or 'smtp.gmail.com',
+                'port': s.port or 587,
+                'use_tls': s.use_tls,
+                'user': s.user or '',
+                'from_name': s.from_name or 'Aarambh Attendance System',
+                'from_email': s.from_email or (s.user if s.provider == 'smtp' else 'onboarding@resend.dev'),
+                'is_active': s.is_active
             })
+
+        first_active = next((s for s in all_settings if s.is_active), None) or (all_settings[0] if all_settings else None)
+        
         return Response({
-            'provider': getattr(setting, 'provider', 'resend'),
-            'resend_api_key': getattr(setting, 'resend_api_key', ''),
-            'host': setting.host,
-            'port': setting.port,
-            'use_tls': setting.use_tls,
-            'user': setting.user,
-            'from_name': setting.from_name,
-            'from_email': setting.from_email,
-            'is_active': setting.is_active
+            'accounts': accounts_data,
+            'active_senders_count': active_count,
+            'total_accounts_count': len(all_settings),
+            'estimated_daily_capacity': active_count * 500,
+            # Backward compatibility fields
+            'id': first_active.id if first_active else None,
+            'provider': getattr(first_active, 'provider', 'resend'),
+            'resend_api_key': getattr(first_active, 'resend_api_key', ''),
+            'host': getattr(first_active, 'host', 'smtp.gmail.com'),
+            'port': getattr(first_active, 'port', 587),
+            'use_tls': getattr(first_active, 'use_tls', True),
+            'user': getattr(first_active, 'user', ''),
+            'from_name': getattr(first_active, 'from_name', 'Aarambh Attendance System'),
+            'from_email': getattr(first_active, 'from_email', 'onboarding@resend.dev'),
+            'is_active': getattr(first_active, 'is_active', False)
         })
 
     if request.method == 'POST':
         data = request.data
         provider = data.get('provider', 'resend')
         resend_key = data.get('resend_api_key', '').strip()
-        
-        if not setting:
-            setting = SMTPSetting.objects.create(
+        account_id = data.get('id') or data.get('account_id')
+        action = data.get('action') # 'create' or 'update'
+
+        # If action is 'create' or account_id is 'new' or no account exists, create new
+        if action == 'create' or account_id == 'new' or (not account_id and not all_settings):
+            new_acc = SMTPSetting.objects.create(
+                provider=provider,
+                resend_api_key=resend_key,
+                host=data.get('host', 'smtp.gmail.com'),
+                port=int(data.get('port', 587)),
+                use_tls=data.get('use_tls', True),
+                user=data.get('user', '').strip(),
+                password=data.get('password', '').strip(),
+                from_name=data.get('from_name', 'Aarambh Attendance System'),
+                from_email=data.get('from_email', 'onboarding@resend.dev'),
+                is_active=data.get('is_active', True)
+            )
+            return Response({
+                'message': f'New sender account "{new_acc.user or new_acc.from_email or "Resend"}" added and activated successfully!',
+                'account_id': new_acc.id
+            })
+
+        # Otherwise, update target account
+        target = None
+        if account_id and str(account_id).isdigit():
+            target = SMTPSetting.objects.filter(id=int(account_id)).first()
+        if not target:
+            target = SMTPSetting.objects.first()
+
+        if not target:
+            target = SMTPSetting.objects.create(
                 provider=provider,
                 resend_api_key=resend_key,
                 host=data.get('host', 'smtp.gmail.com'),
@@ -1055,28 +1103,88 @@ def smtp_settings_view(request):
                 is_active=data.get('is_active', True)
             )
         else:
-            setting.provider = provider
+            target.provider = provider
             if 'resend_api_key' in data:
-                setting.resend_api_key = resend_key
-            setting.host = data.get('host', setting.host)
-            setting.port = int(data.get('port', setting.port))
-            setting.use_tls = data.get('use_tls', setting.use_tls)
-            setting.user = data.get('user', setting.user).strip()
+                target.resend_api_key = resend_key
+            target.host = data.get('host', target.host)
+            target.port = int(data.get('port', target.port))
+            target.use_tls = data.get('use_tls', target.use_tls)
+            target.user = data.get('user', target.user).strip()
             if data.get('password'):
-                setting.password = data.get('password').strip()
-            setting.from_name = data.get('from_name', setting.from_name)
-            setting.from_email = data.get('from_email', setting.from_email)
-            setting.is_active = data.get('is_active', True)
-            setting.save()
+                target.password = data.get('password').strip()
+            target.from_name = data.get('from_name', target.from_name)
+            target.from_email = data.get('from_email', target.from_email)
+            if 'is_active' in data:
+                target.is_active = data.get('is_active', True)
+            target.save()
 
-        return Response({'message': 'Email Gateway Settings saved and activated successfully!'})
+        return Response({'message': 'Sender Account updated successfully!'})
+
+@api_view(['DELETE', 'POST'])
+@permission_classes([AllowAny])
+def delete_smtp_account_view(request, account_id):
+    try:
+        setting = SMTPSetting.objects.get(id=account_id)
+        user_name = setting.user or setting.from_email or f"Account #{account_id}"
+        setting.delete()
+        return Response({'message': f'Sender account "{user_name}" deleted successfully.'})
+    except SMTPSetting.DoesNotExist:
+        return Response({'error': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST', 'PATCH'])
+@permission_classes([AllowAny])
+def toggle_smtp_account_view(request, account_id):
+    try:
+        setting = SMTPSetting.objects.get(id=account_id)
+        setting.is_active = not setting.is_active
+        setting.save(update_fields=['is_active'])
+        status_str = "Active" if setting.is_active else "Inactive"
+        return Response({'message': f'Account status changed to {status_str}.', 'is_active': setting.is_active})
+    except SMTPSetting.DoesNotExist:
+        return Response({'error': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def test_send_email_view(request):
+    from django.core.mail import get_connection
     target_email = request.data.get('email', '').strip()
     if not target_email:
         return Response({'error': 'Please enter a target recipient email address for testing.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    account_id = request.data.get('account_id')
+    sender = None
+    if account_id and str(account_id).isdigit():
+        cfg = SMTPSetting.objects.filter(id=int(account_id)).first()
+        if cfg:
+            if cfg.provider == 'resend' and cfg.resend_api_key:
+                from_email = cfg.from_email.strip() if cfg.from_email else "onboarding@resend.dev"
+                from_name = cfg.from_name.strip() if cfg.from_name else "Aarambh Attendance System"
+                sender = {
+                    'provider': 'resend',
+                    'resend_key': cfg.resend_api_key.strip(),
+                    'from_addr': f"{from_name} <{from_email}>",
+                    'account_id': cfg.id,
+                    'user': cfg.from_email or 'Resend API'
+                }
+            elif cfg.provider == 'smtp' and cfg.user and cfg.password:
+                from_addr = f"{cfg.from_name} <{cfg.from_email or cfg.user}>"
+                conn = get_connection(
+                    'django.core.mail.backends.smtp.EmailBackend',
+                    host=cfg.host,
+                    port=cfg.port,
+                    username=cfg.user,
+                    password=cfg.password,
+                    use_tls=cfg.use_tls,
+                    timeout=8,
+                    fail_silently=False
+                )
+                sender = {
+                    'provider': 'smtp',
+                    'conn': conn,
+                    'from_addr': from_addr,
+                    'account_id': cfg.id,
+                    'user': cfg.user
+                }
 
     # Create temporary student for test email
     test_student, _ = Student.objects.get_or_create(
@@ -1089,12 +1197,13 @@ def test_send_email_view(request):
         }
     )
 
-    log_entry = send_student_qr_email(test_student)
+    log_entry = send_student_qr_email(test_student, specific_sender=sender)
 
     if log_entry.status == 'SENT':
+        sender_label = sender.get('user') if sender else 'Active Sender Gateway'
         return Response({
             'success': True,
-            'message': f'✅ Real Email sent successfully to {target_email}! Please check your inbox / spam folder.'
+            'message': f'✅ Real Email sent successfully from [{sender_label}] to {target_email}! Please check your inbox / spam folder.'
         })
     else:
         return Response({

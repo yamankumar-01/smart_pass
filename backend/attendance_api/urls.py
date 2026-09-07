@@ -19,6 +19,8 @@ from .views import (
     change_password_view,
     smtp_settings_view,
     test_send_email_view,
+    delete_smtp_account_view,
+    toggle_smtp_account_view,
     custom_token_obtain_pair_view
 )
 
@@ -54,6 +56,10 @@ urlpatterns = [
     # SMTP Settings & Test Email Endpoints
     path('settings/smtp/', smtp_settings_view, name='smtp_settings_slash'),
     path('settings/smtp', smtp_settings_view, name='smtp_settings'),
+    path('settings/smtp/<int:account_id>/', delete_smtp_account_view, name='delete_smtp_account_slash'),
+    path('settings/smtp/<int:account_id>', delete_smtp_account_view, name='delete_smtp_account'),
+    path('settings/smtp/<int:account_id>/toggle/', toggle_smtp_account_view, name='toggle_smtp_account_slash'),
+    path('settings/smtp/<int:account_id>/toggle', toggle_smtp_account_view, name='toggle_smtp_account'),
     path('settings/test-email/', test_send_email_view, name='test_send_email_slash'),
     path('settings/test-email', test_send_email_view, name='test_send_email'),
 
