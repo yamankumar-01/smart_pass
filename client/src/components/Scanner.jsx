@@ -60,10 +60,20 @@ export default function Scanner({ activeSession, setActiveSession }) {
   const [zoomLevels, setZoomLevels] = useState([1]);
   const [currentZoom, setCurrentZoom] = useState(1);
 
-  // Resilient Offline-to-Online Sync Queue
+  // Auto-stop camera after successful scan (Volunteer clarity & power efficiency)
+  const [autoStopOnScan, setAutoStopOnScan] = useState(() => {
+    try {
+      const saved = localStorage.getItem('auto_stop_scanner_on_scan');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  // Resilient Offline-to-Online Sync Queue (dual storage in session & local storage)
   const [syncQueue, setSyncQueue] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('attendance_scan_queue');
+      const saved = sessionStorage.getItem('attendance_scan_queue') || localStorage.getItem('attendance_scan_queue');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -74,6 +84,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
   useEffect(() => {
     try {
       sessionStorage.setItem('attendance_scan_queue', JSON.stringify(syncQueue));
+      localStorage.setItem('attendance_scan_queue', JSON.stringify(syncQueue));
     } catch {}
   }, [syncQueue]);
 
@@ -89,12 +100,17 @@ export default function Scanner({ activeSession, setActiveSession }) {
             session_id: item.sessionId
           });
         } catch (err) {
-          if (!err.response || err.response.status >= 500) {
+          if (!err.response || err.response.status >= 500 || err.code === 'ECONNABORTED') {
             remaining.push(item);
           }
         }
       }
       setSyncQueue(remaining);
+      try {
+        sessionStorage.setItem('attendance_scan_queue', JSON.stringify(remaining));
+        localStorage.setItem('attendance_scan_queue', JSON.stringify(remaining));
+      } catch (e) {}
+
       if (activeSession) {
         loadSessionStats(activeSession.id);
       }
@@ -105,9 +121,19 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
   useEffect(() => {
     if (syncQueue.length > 0) {
-      const timer = setTimeout(flushSyncQueue, 3000);
+      const timer = setTimeout(flushSyncQueue, 2500);
       return () => clearTimeout(timer);
     }
+  }, [syncQueue]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      if (syncQueue.length > 0) {
+        flushSyncQueue();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, [syncQueue]);
 
   const qrCodeInstanceRef = useRef(null);
@@ -434,7 +460,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
     };
   }, []);
 
-  const handleScanSuccess = (token) => {
+  const handleScanSuccess = async (token) => {
     const now = Date.now();
     // Debounce duplicate camera trigger within 2.5 seconds for same token
     if (lastScannedTokenRef.current === token && now - lastScannedTimeRef.current < 2500) {
@@ -444,12 +470,18 @@ export default function Scanner({ activeSession, setActiveSession }) {
     // Immediate tactile feedback: short sharp vibration
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       try {
-        navigator.vibrate(60);
+        navigator.vibrate(80);
       } catch (e) {}
     }
 
     lastScannedTokenRef.current = token;
     lastScannedTimeRef.current = now;
+
+    // Automatically turn off camera on scan so volunteer gets clear confirmation
+    if (autoStopOnScan) {
+      await stopScanner();
+    }
+
     processTokenScan(token);
   };
 
@@ -465,6 +497,12 @@ export default function Scanner({ activeSession, setActiveSession }) {
     }
 
     setLoading(true);
+    setScanResult({
+      type: 'loading',
+      status_label: '⏳ Verifying Pass...',
+      message: 'Processing scan with server...'
+    });
+
     try {
       const res = await api.post('/attendance/scan/', {
         token: token.trim(),
@@ -476,8 +514,8 @@ export default function Scanner({ activeSession, setActiveSession }) {
       if (data.success) {
         setScanResult({
           type: 'success',
-          status_label: '✅ Marked Present',
-          message: `${data.student.name} marked present successfully!`,
+          status_label: '✅ Attendance Marked Successfully',
+          message: `${data.student.name} marked present for this session!`,
           student: data.student,
           marked_at: data.marked_at
         });
@@ -496,7 +534,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
       } else if (data.duplicate) {
         setScanResult({
           type: 'duplicate',
-          status_label: '⚠️ Already Marked',
+          status_label: '⚠️ Already Marked Present',
           message: data.message || `Already marked present previously.`,
           student: data.student,
           marked_at: data.marked_at
@@ -518,12 +556,17 @@ export default function Scanner({ activeSession, setActiveSession }) {
         const trimmed = token.trim();
         setSyncQueue(prev => {
           if (prev.some(q => q.token === trimmed && q.sessionId === activeSession.id)) return prev;
-          return [...prev, { token: trimmed, sessionId: activeSession.id, timestamp: Date.now() }];
+          const nextQ = [...prev, { token: trimmed, sessionId: activeSession.id, timestamp: Date.now() }];
+          try {
+            localStorage.setItem('attendance_scan_queue', JSON.stringify(nextQ));
+            sessionStorage.setItem('attendance_scan_queue', JSON.stringify(nextQ));
+          } catch (e) {}
+          return nextQ;
         });
         setScanResult({
           type: 'duplicate',
           status_label: '⚡ Saved Offline (Auto-Syncing)',
-          message: 'Network delay detected. Scan safely saved in offline queue and will sync automatically.',
+          message: 'Network is slow or interrupted. Scan is safely saved in offline queue and will sync automatically to database.',
           marked_at: new Date().toISOString()
         });
         playSound('success');
@@ -718,20 +761,36 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
       {/* Camera QR Scanner Card */}
       <div className="card" style={{ marginBottom: '1.25rem', overflow: 'hidden' }}>
-        <div className="card-header" style={{ paddingBottom: '0.75rem' }}>
+        <div className="card-header" style={{ paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '10px' }}>
           <div className="card-title">
             <Camera size={20} color="var(--primary)" />
             <span>Live Camera QR Scanner</span>
           </div>
-          {isScanning ? (
-            <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <span className="live-dot"></span> Camera Active
-            </span>
-          ) : (
-            <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <CameraOff size={13} /> Camera Stopped
-            </span>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--border)', userSelect: 'none' }} title="Automatically turn off camera as soon as a pass is scanned">
+              <input
+                type="checkbox"
+                checked={autoStopOnScan}
+                onChange={(e) => {
+                  setAutoStopOnScan(e.target.checked);
+                  try {
+                    localStorage.setItem('auto_stop_scanner_on_scan', JSON.stringify(e.target.checked));
+                  } catch (err) {}
+                }}
+                style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+              />
+              <span style={{ fontWeight: 600 }}>Auto-stop on scan</span>
+            </label>
+            {isScanning ? (
+              <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span className="live-dot"></span> Camera Active
+              </span>
+            ) : (
+              <span className="badge badge-warning" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <CameraOff size={13} /> Camera Standby
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Viewfinder Area */}
@@ -1012,22 +1071,65 @@ export default function Scanner({ activeSession, setActiveSession }) {
         {/* Scan Result Feedback Card */}
         {scanResult && (
           <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-            <div className={`scan-feedback-banner ${scanResult.type}`} style={{ margin: 0 }}>
-              {scanResult.type === 'success' && <CheckCircle2 size={28} color="#34d399" style={{ shrink: 0 }} />}
-              {scanResult.type === 'duplicate' && <AlertTriangle size={28} color="#f87171" style={{ shrink: 0 }} />}
-              {scanResult.type === 'error' && <XCircle size={28} color="#f87171" style={{ shrink: 0 }} />}
+            <div className={`scan-feedback-banner ${scanResult.type}`} style={{ margin: 0, flexDirection: 'column', alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                {scanResult.type === 'loading' && <RefreshCw size={28} className="spin" color="var(--primary)" style={{ shrink: 0 }} />}
+                {scanResult.type === 'success' && <CheckCircle2 size={28} color="#34d399" style={{ shrink: 0 }} />}
+                {scanResult.type === 'duplicate' && <AlertTriangle size={28} color="#f87171" style={{ shrink: 0 }} />}
+                {scanResult.type === 'error' && <XCircle size={28} color="#f87171" style={{ shrink: 0 }} />}
 
-              <div style={{ flex: 1 }}>
-                <h4 style={{ color: scanResult.type === 'success' ? '#34d399' : '#f87171', fontSize: '1.1rem', margin: '0 0 4px' }}>
-                  {scanResult.status_label}
-                </h4>
-                <p style={{ margin: 0, fontSize: '0.9rem' }}>{scanResult.message}</p>
-                {scanResult.student && (
-                  <div style={{ marginTop: '8px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                    👤 {scanResult.student.name} • {scanResult.student.branch} (Year {scanResult.student.year} - Sec {scanResult.student.section})
-                  </div>
-                )}
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ color: scanResult.type === 'success' ? '#34d399' : (scanResult.type === 'loading' ? 'var(--primary)' : '#f87171'), fontSize: '1.15rem', margin: '0 0 4px', fontWeight: 800 }}>
+                    {scanResult.status_label}
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.92rem', color: 'var(--text-main)' }}>{scanResult.message}</p>
+                  
+                  {scanResult.student && (
+                    <div style={{ marginTop: '10px', padding: '10px 14px', background: 'rgba(0, 0, 0, 0.25)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                      <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        👤 {scanResult.student.name}
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {scanResult.student.roll_number ? `Roll: ${scanResult.student.roll_number} • ` : ''}
+                        {scanResult.student.branch} • Year {scanResult.student.year} (Sec {scanResult.student.section})
+                      </div>
+                      {scanResult.marked_at && (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          🕒 Marked at: {new Date(scanResult.marked_at).toLocaleTimeString()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Prominent "Scan Next Student" button when camera is stopped */}
+              {!isScanning && !loading && (
+                <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setScanResult(null);
+                      startScanner(cameraFacing);
+                    }}
+                    style={{
+                      padding: '12px 24px',
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: 'linear-gradient(135deg, #10b981, #059669)',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <Play size={18} />
+                    <span>📸 Scan Next Pass (Camera On)</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
