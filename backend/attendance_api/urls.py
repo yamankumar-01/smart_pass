@@ -21,7 +21,9 @@ from .views import (
     test_send_email_view,
     delete_smtp_account_view,
     toggle_smtp_account_view,
-    custom_token_obtain_pair_view
+    custom_token_obtain_pair_view,
+    toggle_attendance_view,
+    bulk_mark_present_view
 )
 
 router = DefaultRouter()
@@ -48,6 +50,10 @@ urlpatterns = [
 
     path('attendance/scan/', attendance_scan_view, name='attendance_scan_slash'),
     path('attendance/scan', attendance_scan_view, name='attendance_scan'),
+    path('attendance/toggle/', toggle_attendance_view, name='attendance_toggle_slash'),
+    path('attendance/toggle', toggle_attendance_view, name='attendance_toggle'),
+    path('attendance/bulk-mark/', bulk_mark_present_view, name='attendance_bulk_mark_slash'),
+    path('attendance/bulk-mark', bulk_mark_present_view, name='attendance_bulk_mark'),
     path('attendance/session/<int:session_id>/', session_report_view, name='session_report_slash'),
     path('attendance/session/<int:session_id>', session_report_view, name='session_report'),
     path('attendance/export/<int:session_id>/', export_attendance_csv_view, name='export_attendance_csv_slash'),

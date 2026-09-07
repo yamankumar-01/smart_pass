@@ -11,6 +11,88 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
   const [matrixData, setMatrixData] = useState(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [matrixSearch, setMatrixSearch] = useState('');
+  const [togglingId, setTogglingId] = useState(null);
+
+  // Toggle attendance in multi-day matrix view
+  const toggleMatrixAttendance = async (sessionId, studentId, studentName) => {
+    const key = `${sessionId}_${studentId}`;
+    setTogglingId(key);
+    try {
+      const res = await api.post('/attendance/toggle/', {
+        session_id: sessionId,
+        student_id: studentId
+      });
+      const newStatus = res.data.status; // 'PRESENT' or 'ABSENT'
+
+      setMatrixData(prev => {
+        if (!prev) return prev;
+        const newMatrix = prev.matrix.map(row => {
+          if (row.student.id !== studentId) return row;
+          const newAtt = { ...row.attendance, [sessionId]: newStatus };
+          const totalPresent = Object.values(newAtt).filter(v => v === 'PRESENT').length;
+          const pct = row.total_days > 0 ? Math.round((totalPresent / row.total_days) * 100) : 0;
+          return {
+            ...row,
+            attendance: newAtt,
+            total_present: totalPresent,
+            percentage: pct
+          };
+        });
+        return { ...prev, matrix: newMatrix };
+      });
+    } catch (err) {
+      console.error('Failed to toggle attendance:', err);
+      alert('Failed to update attendance status.');
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  // Bulk mark all enrolled students present for a session
+  const handleBulkMarkAll = async (sessionId, dayLabel) => {
+    if (!sessionId) return;
+    if (!window.confirm(`Are you sure you want to mark ALL enrolled students as PRESENT for ${dayLabel}?`)) return;
+    try {
+      setMatrixLoading(true);
+      await api.post('/attendance/bulk-mark/', {
+        session_id: sessionId,
+        all_enrolled: true
+      });
+      if (selectedEventId) {
+        await loadMatrixData(selectedEventId);
+      }
+      if (selectedSessionId) {
+        const sRes = await api.get(`/attendance/session/${selectedSessionId}`);
+        setReportData(sRes.data);
+      }
+      alert(`Success! All students have been marked PRESENT for ${dayLabel}.`);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to bulk mark students.');
+    } finally {
+      setMatrixLoading(false);
+    }
+  };
+
+  // Toggle in Single Session view
+  const toggleSingleSessionAttendance = async (studentId, studentName, currentStatus) => {
+    if (!selectedSessionId) return;
+    try {
+      await api.post('/attendance/toggle/', {
+        session_id: selectedSessionId,
+        student_id: studentId,
+        status: currentStatus === 'present' ? 'ABSENT' : 'PRESENT'
+      });
+      const res = await api.get(`/attendance/session/${selectedSessionId}`);
+      setReportData(res.data);
+      if (selectedEventId) {
+        loadMatrixData(selectedEventId);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update attendance.');
+    }
+  };
 
   // Single Session State
   const [sessions, setSessions] = useState([]);
@@ -217,22 +299,38 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
             <div className="card" style={{ padding: 0 }}>
               {/* Event Matrix Header & Search */}
               <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   <h4 style={{ margin: 0, color: 'var(--text-main)' }}>
                     {matrixData.event.title} • Consolidated Matrix ({matrixData.sessions.length} Days)
                   </h4>
+                  {matrixData.sessions.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '0.8rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid rgba(16, 185, 129, 0.3)', color: 'var(--success)' }}
+                      onClick={() => handleBulkMarkAll(matrixData.sessions[0].id, matrixData.sessions[0].day_label || 'Day 1')}
+                      title="Bulk mark all 591 students present for Day 1"
+                    >
+                      <CheckCircle2 size={14} /> Bulk Mark All Present ({matrixData.sessions[0].day_label || 'Day 1'})
+                    </button>
+                  )}
                 </div>
 
-                <div style={{ position: 'relative', width: '260px' }}>
-                  <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input
-                    type="text"
-                    className="form-input"
-                    style={{ paddingLeft: '32px', fontSize: '0.85rem' }}
-                    placeholder="Search student in matrix..."
-                    value={matrixSearch}
-                    onChange={(e) => setMatrixSearch(e.target.value)}
-                  />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    💡 <em>Click any badge below to toggle Present/Absent</em>
+                  </span>
+                  <div style={{ position: 'relative', width: '240px' }}>
+                    <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input
+                      type="text"
+                      className="form-input"
+                      style={{ paddingLeft: '32px', fontSize: '0.85rem' }}
+                      placeholder="Search student in matrix..."
+                      value={matrixSearch}
+                      onChange={(e) => setMatrixSearch(e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -273,14 +371,30 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Y{row.student.year}</span>
                           </td>
 
-                          {/* Day Columns */}
+                          {/* Day Columns (Interactive Toggle) */}
                           {matrixData.sessions.map((sess) => {
                             const isPresent = row.attendance[sess.id] === 'PRESENT';
+                            const isToggling = togglingId === `${sess.id}_${row.student.id}`;
                             return (
                               <td key={sess.id} style={{ textAlign: 'center' }}>
-                                <span className={`badge badge-${isPresent ? 'success' : 'danger'}`} style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
-                                  {isPresent ? '✅ PRESENT' : '❌ ABSENT'}
-                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => toggleMatrixAttendance(sess.id, row.student.id, row.student.name)}
+                                  className={`badge badge-${isPresent ? 'success' : 'danger'}`}
+                                  style={{
+                                    fontSize: '0.75rem',
+                                    padding: '4px 10px',
+                                    cursor: 'pointer',
+                                    border: '1px solid transparent',
+                                    transition: 'all 0.15s ease',
+                                    opacity: isToggling ? 0.6 : 1,
+                                    outline: 'none'
+                                  }}
+                                  title="Click to toggle Present / Absent"
+                                >
+                                  {isToggling ? '⏳ ...' : (isPresent ? '✅ PRESENT' : '❌ ABSENT')}
+                                </button>
                               </td>
                             );
                           })}
@@ -406,7 +520,7 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
 
           <div className="card" style={{ padding: 0 }}>
             <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <button
                   className={`btn ${activeTab === 'present' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
                   onClick={() => setActiveTab('present')}
@@ -420,6 +534,18 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                 >
                   <XCircle size={14} /> Absent ({reportData ? reportData.stats.absent : 0})
                 </button>
+
+                {selectedSessionId && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleBulkMarkAll(selectedSessionId, reportData?.session?.title || 'This Session')}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', border: '1px solid rgba(16, 185, 129, 0.3)' }}
+                    title="Mark all enrolled students present for this session"
+                  >
+                    <CheckCircle2 size={14} /> Bulk Mark All Present
+                  </button>
+                )}
               </div>
 
               <div style={{ position: 'relative', width: '260px' }}>
@@ -445,12 +571,13 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                     <th>Year & Section</th>
                     <th>Status</th>
                     <th>Time Marked</th>
+                    <th style={{ textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredSingleList.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                         No records found in this category.
                       </td>
                     </tr>
@@ -468,6 +595,16 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                         </td>
                         <td style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>
                           {item.marked_at ? new Date(item.marked_at).toLocaleTimeString() : 'N/A'}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => toggleSingleSessionAttendance(item.id, item.name, activeTab)}
+                            className={`btn btn-${activeTab === 'present' ? 'danger' : 'success'} btn-sm`}
+                            style={{ padding: '3px 10px', fontSize: '0.78rem' }}
+                          >
+                            {activeTab === 'present' ? 'Mark Absent' : 'Mark Present'}
+                          </button>
                         </td>
                       </tr>
                     ))

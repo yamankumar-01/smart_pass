@@ -1343,3 +1343,88 @@ def seed_samples_view(request):
         'message': f'Seeded {created_count} sample students!',
         'session_id': session_obj.id
     })
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def toggle_attendance_view(request):
+    """
+    Toggles attendance for a student in a specific session.
+    Accepts: { session_id, student_id, status (optional: 'PRESENT' or 'ABSENT') }
+    """
+    session_id = request.data.get('session_id')
+    student_id = request.data.get('student_id')
+    desired_status = request.data.get('status')
+
+    if not session_id or not student_id:
+        return Response({'error': 'session_id and student_id are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        session_obj = AttendanceSession.objects.get(id=session_id)
+        student_obj = Student.objects.get(id=student_id)
+    except (AttendanceSession.DoesNotExist, Student.DoesNotExist) as e:
+        return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+
+    existing_record = AttendanceRecord.objects.filter(session=session_obj, student=student_obj).first()
+
+    if desired_status == 'ABSENT' or (not desired_status and existing_record and existing_record.status == 'PRESENT'):
+        if existing_record:
+            existing_record.delete()
+        new_status = 'ABSENT'
+        marked_at = None
+    else:
+        if not existing_record:
+            rec = AttendanceRecord.objects.create(session=session_obj, student=student_obj, status='PRESENT')
+            marked_at = rec.timestamp
+        else:
+            existing_record.status = 'PRESENT'
+            existing_record.save()
+            marked_at = existing_record.timestamp
+        new_status = 'PRESENT'
+
+    return Response({
+        'success': True,
+        'session_id': session_obj.id,
+        'student_id': student_obj.id,
+        'student_name': student_obj.name,
+        'status': new_status,
+        'marked_at': marked_at
+    })
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def bulk_mark_present_view(request):
+    """
+    Allows bulk marking students as present for a session.
+    Input: { session_id, student_ids: [1, 2, ...] } or { session_id, all_enrolled: True }
+    """
+    session_id = request.data.get('session_id')
+    student_ids = request.data.get('student_ids', [])
+    all_enrolled = request.data.get('all_enrolled', False)
+
+    if not session_id:
+        return Response({'error': 'session_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        session_obj = AttendanceSession.objects.get(id=session_id)
+    except AttendanceSession.DoesNotExist:
+        return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if all_enrolled:
+        if session_obj.event:
+            students = Student.objects.filter(event_passes__event=session_obj.event)
+        else:
+            students = Student.objects.all()
+    else:
+        students = Student.objects.filter(id__in=student_ids)
+
+    existing_present_ids = set(AttendanceRecord.objects.filter(session=session_obj, status='PRESENT').values_list('student_id', flat=True))
+    to_create = [AttendanceRecord(session=session_obj, student=st, status='PRESENT') for st in students if st.id not in existing_present_ids]
+
+    if to_create:
+        AttendanceRecord.objects.bulk_create(to_create, ignore_conflicts=True)
+
+    return Response({
+        'success': True,
+        'marked_count': len(to_create),
+        'total_present': AttendanceRecord.objects.filter(session=session_obj, status='PRESENT').count()
+    })
