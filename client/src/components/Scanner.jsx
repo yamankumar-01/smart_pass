@@ -158,7 +158,28 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
         if (initialEvent.sessions && initialEvent.sessions.length > 0) {
           if (!activeSession || (activeSession.event && activeSession.event !== initialEvent.id)) {
-            const activeSess = initialEvent.sessions.find(s => s.is_active || s.status === 'ACTIVE') || initialEvent.sessions[0];
+            // Prioritize session matching today's date (Day 2) or latest active session
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const todayStr = `${year}-${month}-${day}`;
+
+            const savedSessId = sessionStorage.getItem('selected_session_id');
+            const activeSessions = initialEvent.sessions.filter(s => s.is_active || s.status === 'ACTIVE');
+
+            let activeSess = savedSessId ? initialEvent.sessions.find(s => String(s.id) === String(savedSessId)) : null;
+
+            if (!activeSess) {
+              activeSess = activeSessions.find(s => s.date === todayStr);
+            }
+            if (!activeSess && activeSessions.length > 0) {
+              activeSess = activeSessions[activeSessions.length - 1];
+            }
+            if (!activeSess) {
+              activeSess = initialEvent.sessions[0];
+            }
+
             setActiveSession(activeSess);
           }
         } else {
@@ -660,6 +681,9 @@ export default function Scanner({ activeSession, setActiveSession }) {
                     const sessId = e.target.value;
                     const sess = availableDays.find(s => String(s.id) === String(sessId));
                     setActiveSession(sess || null);
+                    if (sess) {
+                      sessionStorage.setItem('selected_session_id', String(sess.id));
+                    }
                     setScanResult(null);
                   }}
                 >
