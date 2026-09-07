@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, CameraOff, Play, Square, RefreshCw, UploadCloud, CheckCircle2, AlertTriangle, XCircle, Users, Keyboard, Sparkles } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Camera, CameraOff, Play, Square, RefreshCw, UploadCloud, CheckCircle2, AlertTriangle, XCircle, Users, Keyboard, Sparkles, Zap, ZapOff, ZoomIn } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import api from '../api/axios';
 
@@ -52,6 +52,13 @@ export default function Scanner({ activeSession, setActiveSession }) {
   const [cameraFacing, setCameraFacing] = useState('environment'); // 'environment' (back) or 'user' (front)
   const [cameraError, setCameraError] = useState(null);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
+
+  // Hardware Camera Capabilities (Torch & Zoom)
+  const [hasTorch, setHasTorch] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [hasZoom, setHasZoom] = useState(false);
+  const [zoomLevels, setZoomLevels] = useState([1]);
+  const [currentZoom, setCurrentZoom] = useState(1);
 
   // Resilient Offline-to-Online Sync Queue
   const [syncQueue, setSyncQueue] = useState(() => {
@@ -167,8 +174,98 @@ export default function Scanner({ activeSession, setActiveSession }) {
     }
   }, [activeSession]);
 
+  // Helper to access underlying video stream track for hardware controls
+  const getVideoTrack = () => {
+    try {
+      const videoElem = document.querySelector('#qr-reader video');
+      if (videoElem && videoElem.srcObject) {
+        const tracks = videoElem.srcObject.getVideoTracks();
+        if (tracks && tracks.length > 0) return tracks[0];
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  // Inspect hardware camera capabilities (autofocus, torch, zoom)
+  const detectCameraFeatures = () => {
+    try {
+      const track = getVideoTrack();
+      if (!track) return;
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+
+      // 1. Continuous autofocus for instant, sharp QR code detection
+      if (caps.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
+        track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+      }
+
+      // 2. Hardware Torch / Flashlight
+      if (caps.torch) {
+        setHasTorch(true);
+      } else {
+        setHasTorch(false);
+        setTorchOn(false);
+      }
+
+      // 3. Hardware Zoom
+      if (caps.zoom) {
+        setHasZoom(true);
+        const maxZ = Math.min(caps.zoom.max || 3, 3);
+        const levels = [1];
+        if (maxZ >= 1.5) levels.push(1.5);
+        if (maxZ >= 2) levels.push(2);
+        setZoomLevels(levels);
+        setCurrentZoom(1);
+      } else {
+        setHasZoom(false);
+      }
+    } catch (err) {
+      console.warn('Camera feature detection warning:', err);
+    }
+  };
+
+  // Toggle Torch / Flashlight
+  const toggleTorch = async () => {
+    const track = getVideoTrack();
+    if (!track) return;
+    try {
+      const nextTorch = !torchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: nextTorch }]
+      });
+      setTorchOn(nextTorch);
+    } catch (err) {
+      console.warn('Torch toggle failed:', err);
+    }
+  };
+
+  // Adjust Camera Zoom
+  const handleZoomChange = async (targetZoom) => {
+    const track = getVideoTrack();
+    if (!track) return;
+    try {
+      await track.applyConstraints({
+        advanced: [{ zoom: Number(targetZoom) }]
+      });
+      setCurrentZoom(Number(targetZoom));
+    } catch (err) {
+      console.warn('Zoom change failed:', err);
+    }
+  };
+
   // Helper to stop scanner
   const stopScanner = async () => {
+    if (torchOn) {
+      try {
+        const track = getVideoTrack();
+        if (track) {
+          await track.applyConstraints({ advanced: [{ torch: false }] });
+        }
+      } catch (e) {}
+    }
+    setTorchOn(false);
+    setHasTorch(false);
+    setHasZoom(false);
+
     if (qrCodeInstanceRef.current) {
       try {
         if (qrCodeInstanceRef.current.isScanning) {
@@ -195,9 +292,11 @@ export default function Scanner({ activeSession, setActiveSession }) {
         return;
       }
 
-      // If instance doesn't exist, create it with native barcode detector support
+      // If instance doesn't exist, create it with QR_CODE ONLY & native barcode detector support
+      // Restricting to QR_CODE only makes decoding up to 5x faster!
       if (!qrCodeInstanceRef.current) {
         qrCodeInstanceRef.current = new Html5Qrcode('qr-reader', {
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true
           },
@@ -207,27 +306,52 @@ export default function Scanner({ activeSession, setActiveSession }) {
         await qrCodeInstanceRef.current.stop();
       }
 
+      // Generous adaptive scan box (90% width) - no more struggling to align inside a tiny box!
       const qrConfig = {
-        fps: 20,
-        aspectRatio: 1.0,
+        fps: 15, // 15 fps gives sharp, unblurred frames without CPU lag
         qrbox: (viewfinderWidth, viewfinderHeight) => {
           const edge = Math.min(viewfinderWidth, viewfinderHeight);
-          return { width: Math.max(220, Math.floor(edge * 0.85)), height: Math.max(220, Math.floor(edge * 0.85)) };
-        }
+          const boxSize = Math.max(220, Math.floor(edge * 0.90));
+          return { width: boxSize, height: boxSize };
+        },
+        disableFlip: facing === 'environment'
       };
 
-      await qrCodeInstanceRef.current.start(
-        { facingMode: facing },
-        qrConfig,
-        (decodedText) => {
-          handleScanSuccess(decodedText);
-        },
-        () => {
-          // Ignore individual frame non-matches
-        }
-      );
+      // Camera constraints: Request sharp HD 720p stream
+      const cameraConstraints = {
+        facingMode: facing,
+        width: { min: 640, ideal: 1280, max: 1920 },
+        height: { min: 480, ideal: 720, max: 1080 }
+      };
+
+      try {
+        await qrCodeInstanceRef.current.start(
+          cameraConstraints,
+          qrConfig,
+          (decodedText) => {
+            handleScanSuccess(decodedText);
+          },
+          () => {
+            // Ignore frame non-matches
+          }
+        );
+      } catch (startErr) {
+        // Graceful fallback if device browser rejects width/height hints
+        console.warn('HD camera constraints rejected, falling back to default:', startErr);
+        await qrCodeInstanceRef.current.start(
+          { facingMode: facing },
+          qrConfig,
+          (decodedText) => {
+            handleScanSuccess(decodedText);
+          },
+          () => {}
+        );
+      }
 
       setCameraFacing(facing);
+
+      // Inspect hardware capabilities once stream begins
+      setTimeout(detectCameraFeatures, 250);
     } catch (err) {
       console.error('Failed to start camera:', err);
       let errorMsg = 'Could not access camera. Please allow camera permissions in your browser.';
@@ -261,7 +385,13 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
     try {
       if (!qrCodeInstanceRef.current) {
-        qrCodeInstanceRef.current = new Html5Qrcode('qr-reader');
+        qrCodeInstanceRef.current = new Html5Qrcode('qr-reader', {
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          },
+          verbose: false
+        });
       }
 
       // If camera is currently streaming, pause it
@@ -309,6 +439,13 @@ export default function Scanner({ activeSession, setActiveSession }) {
     // Debounce duplicate camera trigger within 2.5 seconds for same token
     if (lastScannedTokenRef.current === token && now - lastScannedTimeRef.current < 2500) {
       return;
+    }
+
+    // Immediate tactile feedback: short sharp vibration
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate(60);
+      } catch (e) {}
     }
 
     lastScannedTokenRef.current = token;
@@ -611,6 +748,13 @@ export default function Scanner({ activeSession, setActiveSession }) {
             }}
           ></div>
 
+          {/* Real-time scanning guidance */}
+          {isScanning && (
+            <div style={{ textAlign: 'center', padding: '8px 12px 2px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              ⚡ <strong>Instant QR Detection:</strong> Hold student's phone 6–10 inches away with good screen brightness.
+            </div>
+          )}
+
           {/* Standby Placeholder when camera is stopped */}
           {!isScanning && (
             <div
@@ -727,7 +871,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
                 }}
               >
                 <Square size={18} />
-                <span>⏹ Close Camera</span>
+                <span>⏹ Close</span>
               </button>
               <button
                 type="button"
@@ -743,8 +887,65 @@ export default function Scanner({ activeSession, setActiveSession }) {
                 }}
               >
                 <RefreshCw size={16} />
-                <span>Flip Camera ({cameraFacing === 'environment' ? 'Back' : 'Front'})</span>
+                <span>Flip ({cameraFacing === 'environment' ? 'Back' : 'Front'})</span>
               </button>
+
+              {/* Torch (Flashlight) Toggle Button */}
+              {hasTorch && (
+                <button
+                  type="button"
+                  className={`btn ${torchOn ? 'btn-warning' : 'btn-secondary'}`}
+                  onClick={toggleTorch}
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: torchOn ? '#eab308' : undefined,
+                    color: torchOn ? '#0f172a' : undefined
+                  }}
+                  title="Turn flashlight on/off for dim light scanning"
+                >
+                  {torchOn ? <Zap size={16} fill="#0f172a" /> : <ZapOff size={16} />}
+                  <span>{torchOn ? 'Flash ON' : 'Flashlight'}</span>
+                </button>
+              )}
+
+              {/* Hardware Zoom Selector */}
+              {hasZoom && zoomLevels.length > 1 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    padding: '4px 8px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border)'
+                  }}
+                >
+                  <ZoomIn size={15} style={{ color: 'var(--text-muted)' }} />
+                  {zoomLevels.map(lvl => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => handleZoomChange(lvl)}
+                      className={`btn btn-sm ${currentZoom === lvl ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '0.78rem',
+                        fontWeight: currentZoom === lvl ? 700 : 500,
+                        minWidth: '36px'
+                      }}
+                    >
+                      {lvl}x
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -759,7 +960,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
                 }}
               >
                 <UploadCloud size={16} />
-                <span>Upload QR Image</span>
+                <span>Upload Image</span>
               </button>
             </>
           ) : (

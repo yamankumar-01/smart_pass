@@ -651,13 +651,16 @@ body {
 /* Html5Qrcode Reader Overrides */
 #qr-reader {
   border: none !important;
+  background: #000000;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 #qr-reader img, #qr-reader video {
   width: 100% !important;
   max-width: 100% !important;
   border-radius: 12px;
-  object-fit: cover;
+  object-fit: contain !important;
 }
 
 #qr-reader__scan_region {
