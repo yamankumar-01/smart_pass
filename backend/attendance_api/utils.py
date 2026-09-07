@@ -610,6 +610,10 @@ def send_batch_event_qr_emails(passes):
 
     def _send_single_item(item):
         index, event_pass = item
+        # Strict duplicate guard: if already sent, skip immediately
+        if getattr(event_pass, 'qr_sent', False):
+            return
+
         # Round-robin: rotate through active senders so no single account hits daily limit
         sender_cfg = senders[index % num_senders]
         

@@ -507,13 +507,29 @@ def bulk_generate_qr_view(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def bulk_send_emails_view(request):
+    force_resend = request.data.get('force_resend', False)
     student_ids = request.data.get('student_ids', None)
+
     if student_ids:
-        students = list(Student.objects.filter(id__in=student_ids))
+        if force_resend:
+            students = list(Student.objects.filter(id__in=student_ids))
+        else:
+            students = list(Student.objects.filter(id__in=student_ids, qr_sent=False))
     else:
-        students = list(Student.objects.filter(qr_sent=False))
-        if not students:
+        if force_resend:
             students = list(Student.objects.all())
+        else:
+            students = list(Student.objects.filter(qr_sent=False))
+
+    already_sent_count = Student.objects.filter(qr_sent=True).count()
+    if not students:
+        return Response({
+            'message': f'✅ Sabhi {already_sent_count} students ko pehle hi email bheja ja chuka hai! Duplicate email nahi bheja gaya.',
+            'sent_count': 0,
+            'already_sent_count': already_sent_count,
+            'failed_count': 0,
+            'errors': []
+        })
 
     senders = get_all_active_mail_senders()
     num_senders = len(senders)
@@ -530,9 +546,14 @@ def bulk_send_emails_view(request):
 
     threading.Thread(target=_worker, daemon=True).start()
 
+    msg = f'⚡ Sending {len(students)} pending student passes in background across {max(1, num_senders)} sender accounts.'
+    if already_sent_count > 0:
+        msg += f' ({already_sent_count} students ko pehle hi send ho chuka hai, unhe skip kiya gaya hai).'
+
     return Response({
-        'message': f'⚡ Superfast Dispatch Started! Sending {len(students)} student passes in background across {max(1, num_senders)} sender accounts.',
+        'message': msg,
         'sent_count': len(students),
+        'already_sent_count': already_sent_count,
         'failed_count': 0,
         'errors': []
     })
@@ -760,17 +781,41 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='send-emails')
     def send_emails(self, request, pk=None):
         event_obj = self.get_object()
-        passes = list(event_obj.passes.all().select_related('student', 'event'))
+        force_resend = request.data.get('force_resend', False)
+        
+        # Only fetch pending passes where qr_sent=False, never re-send to students who already received pass
+        if force_resend:
+            passes = list(event_obj.passes.all().select_related('student', 'event'))
+        else:
+            passes = list(event_obj.passes.filter(qr_sent=False).select_related('student', 'event'))
+            
+        already_sent_count = event_obj.passes.filter(qr_sent=True).count()
+        total_count = event_obj.passes.count()
+
         if not passes:
+            if already_sent_count > 0:
+                return Response({
+                    'message': f'✅ Sabhi {already_sent_count} students ko "{event_obj.title}" ka pass pehle hi bheja ja chuka hai! Duplicate email nahi bheja gaya.',
+                    'already_sent_count': already_sent_count,
+                    'sent_count': 0,
+                    'failed_count': 0,
+                    'errors': []
+                })
             return Response({'error': f'No student passes found for "{event_obj.title}". Please upload or enroll students for this event first.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # High-speed asynchronous batch dispatch in background thread
         import threading
         threading.Thread(target=send_batch_event_qr_emails, args=(passes,), daemon=True).start()
 
+        msg = f'⚡ Sending {len(passes)} pending passes for "{event_obj.title}".'
+        if already_sent_count > 0:
+            msg += f' ({already_sent_count} students ko pehle hi send ho chuka tha, unhe skip kar diya gaya hai).'
+
         return Response({
-            'message': f'⚡ Superfast Dispatch Active! Dispatched {len(passes)} event passes for "{event_obj.title}" instantly in background.',
+            'message': msg,
             'sent_count': len(passes),
+            'already_sent_count': already_sent_count,
+            'total_passes': total_count,
             'failed_count': 0,
             'errors': []
         })
