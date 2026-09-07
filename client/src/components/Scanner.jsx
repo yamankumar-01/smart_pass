@@ -53,6 +53,56 @@ export default function Scanner({ activeSession, setActiveSession }) {
   const [cameraError, setCameraError] = useState(null);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
 
+  // Resilient Offline-to-Online Sync Queue
+  const [syncQueue, setSyncQueue] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('attendance_scan_queue');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('attendance_scan_queue', JSON.stringify(syncQueue));
+    } catch {}
+  }, [syncQueue]);
+
+  const flushSyncQueue = async () => {
+    if (syncQueue.length === 0 || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const remaining = [];
+      for (const item of syncQueue) {
+        try {
+          await api.post('/attendance/scan/', {
+            token: item.token,
+            session_id: item.sessionId
+          });
+        } catch (err) {
+          if (!err.response || err.response.status >= 500) {
+            remaining.push(item);
+          }
+        }
+      }
+      setSyncQueue(remaining);
+      if (activeSession) {
+        loadSessionStats(activeSession.id);
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (syncQueue.length > 0) {
+      const timer = setTimeout(flushSyncQueue, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [syncQueue]);
+
   const qrCodeInstanceRef = useRef(null);
   const fileInputRef = useRef(null);
   const lastScannedTokenRef = useRef(null);
@@ -325,14 +375,30 @@ export default function Scanner({ activeSession, setActiveSession }) {
         playSound('error');
       }
     } catch (err) {
-      console.error('Scan API call failed:', err);
-      const errMsg = err.response?.data?.message || 'Network error verifying QR code.';
-      setScanResult({
-        type: 'error',
-        status_label: '❌ Scan Error',
-        message: errMsg
-      });
-      playSound('error');
+      console.warn('Scan API call failed:', err);
+      const isNetworkError = !err.response || err.response.status >= 500 || err.code === 'ECONNABORTED';
+      if (isNetworkError) {
+        const trimmed = token.trim();
+        setSyncQueue(prev => {
+          if (prev.some(q => q.token === trimmed && q.sessionId === activeSession.id)) return prev;
+          return [...prev, { token: trimmed, sessionId: activeSession.id, timestamp: Date.now() }];
+        });
+        setScanResult({
+          type: 'duplicate',
+          status_label: '⚡ Saved Offline (Auto-Syncing)',
+          message: 'Network delay detected. Scan safely saved in offline queue and will sync automatically.',
+          marked_at: new Date().toISOString()
+        });
+        playSound('success');
+      } else {
+        const errMsg = err.response?.data?.message || 'Network error verifying QR code.';
+        setScanResult({
+          type: 'error',
+          status_label: '❌ Scan Error',
+          message: errMsg
+        });
+        playSound('error');
+      }
     } finally {
       setLoading(false);
     }
@@ -397,26 +463,26 @@ export default function Scanner({ activeSession, setActiveSession }) {
             {/* STEP 2: SELECT DAY */}
             <div>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                📅 Step 2: Select Lecture Day
+                📅 Step 2: Lecture Day
               </span>
               <div style={{ marginTop: '4px' }}>
                 <select
                   className="form-select"
-                  style={{ width: '100%', fontWeight: 600, fontSize: '0.88rem' }}
+                  style={{ width: '100%', fontWeight: 600, fontSize: '0.88rem', borderColor: activeSession ? 'var(--primary)' : 'var(--border)' }}
                   value={activeSession ? activeSession.id : ''}
                   onChange={(e) => {
-                    const selected = availableDays.find(s => s.id === parseInt(e.target.value));
-                    setActiveSession(selected);
+                    const sessId = e.target.value;
+                    const sess = availableDays.find(s => String(s.id) === String(sessId));
+                    setActiveSession(sess || null);
                     setScanResult(null);
                   }}
-                  disabled={availableDays.length === 0}
                 >
                   {availableDays.length === 0 ? (
-                    <option value="">No days added yet (Add in "Events & Days")</option>
+                    <option value="">No days added yet for this event</option>
                   ) : (
-                    availableDays.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.day_label || `Day ${availableDays.indexOf(s) + 1}`}
+                    availableDays.map(sess => (
+                      <option key={sess.id} value={sess.id}>
+                        {sess.day_label || 'Day'} ({sess.date}) {sess.topic ? `- ${sess.topic}` : ''} {sess.is_active ? '🟢 (Active)' : '🔴 (Closed)'}
                       </option>
                     ))
                   )}
@@ -426,28 +492,87 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
           </div>
 
-          {/* Prominent Present Student Counter */}
-          <div
-            style={{
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.25))',
-              border: '1.5px solid rgba(16, 185, 129, 0.4)',
-              padding: '10px 18px',
-              borderRadius: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '14px',
-              flex: '0 0 auto'
-            }}
-          >
-            <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', shrink: 0 }}>
-              <Users size={22} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
-                Present Students
+          {/* Right Counters: Present + Sync Health Status */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {/* Sync Health Badge */}
+            {syncQueue.length > 0 ? (
+              <div
+                style={{
+                  background: 'rgba(234, 179, 8, 0.15)',
+                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                  borderRadius: '12px',
+                  padding: '8px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}
+              >
+                <RefreshCw size={18} className={isSyncing ? 'spin' : ''} color="#eab308" />
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: '#eab308', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Offline Queue
+                  </div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fef08a' }}>
+                    {syncQueue.length} pending
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={flushSyncQueue}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '6px' }}
+                >
+                  {isSyncing ? 'Syncing...' : 'Sync Now'}
+                </button>
               </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success)', lineHeight: 1.1 }}>
-                {sessionStats.present} <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-muted)' }}>/ {sessionStats.total}</span>
+            ) : (
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '12px',
+                  padding: '8px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <CheckCircle2 size={16} color="var(--success)" />
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Sync Status
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--success)' }}>
+                    Real-Time
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Prominent Present Student Counter */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.25))',
+                border: '1.5px solid rgba(16, 185, 129, 0.4)',
+                padding: '10px 18px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px',
+                flex: '0 0 auto'
+              }}
+            >
+              <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', shrink: 0 }}>
+                <Users size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Present Students
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success)', lineHeight: 1.1 }}>
+                  {sessionStats.present} <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-muted)' }}>/ {sessionStats.total}</span>
+                </div>
               </div>
             </div>
           </div>

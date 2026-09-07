@@ -16,6 +16,7 @@ from .serializers import (
     AttendanceSessionSerializer, 
     AttendanceRecordSerializer, 
     EmailLogSerializer,
+    EmailLogListSerializer,
     SMTPSettingSerializer,
     ScanInputSerializer,
     EventSerializer,
@@ -1087,6 +1088,11 @@ class EmailLogViewSet(viewsets.ModelViewSet):
     queryset = EmailLog.objects.all().order_by('-id')
     serializer_class = EmailLogSerializer
     permission_classes = [AllowAny]
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return EmailLogListSerializer
+        return EmailLogSerializer
 
     @action(detail=False, methods=['delete', 'post'], url_path='clear-all')
     def clear_all(self, request):

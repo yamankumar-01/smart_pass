@@ -92,6 +92,11 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
         fields = ['id', 'session', 'student', 'timestamp', 'marked_at', 'status']
         read_only_fields = ['id', 'timestamp']
 
+class EmailLogListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailLog
+        fields = ['id', 'student', 'student_name', 'email', 'subject', 'qr_token', 'status', 'error_message', 'sent_at']
+
 class EmailLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmailLog

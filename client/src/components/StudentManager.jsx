@@ -101,7 +101,10 @@ export default function StudentManager({ initialEventFilter }) {
   }, [initialEventFilter]);
 
   useEffect(() => {
-    loadStudents();
+    const timer = setTimeout(() => {
+      loadStudents();
+    }, 250);
+    return () => clearTimeout(timer);
   }, [search, branchFilter, yearFilter, eventFilter]);
 
   const handleSingleSubmit = async (e) => {
