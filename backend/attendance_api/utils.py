@@ -14,8 +14,8 @@ from .models import EmailLog, SMTPSetting
 
 def generate_qr_code(unique_token):
     """
-    Generates a QR Code image in memory using Python qrcode library.
-    Encodes ONLY the unique_token (UUID string) — never raw personal data.
+    Generates a high-contrast QR Code image in memory using Python qrcode library.
+    Encodes ONLY the unique_token (UUID string) for maximum privacy.
     Returns (ContentFile, data_url_string)
     """
     token_str = str(unique_token)
@@ -28,7 +28,7 @@ def generate_qr_code(unique_token):
     qr.add_data(token_str)
     qr.make(fit=True)
 
-    img = qr.make_image(fill_color="#1e293b", back_color="#ffffff")
+    img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
     
     buffer = io.BytesIO()
     img.save(buffer, format='PNG')
@@ -43,14 +43,13 @@ def generate_qr_code(unique_token):
 def send_email_via_resend(api_key, from_addr, to_email, subject, html_body, qr_raw_bytes=None, qr_filename="qr_pass.png"):
     """
     Sends an email using Resend REST API over HTTPS (port 443).
-    Bypasses cloud provider port restrictions (e.g., Render Free Tier where SMTP ports 25, 465, 587 are blocked).
+    Supports inline CID images (contentId) so QR code displays seamlessly inside the card in Gmail.
     """
     url = "https://api.resend.com/emails"
     
     sender = from_addr.strip() if from_addr else "Aarambh Attendance System <onboarding@resend.dev>"
     
-    # Resend requires onboarding@resend.dev for test accounts without a verified custom domain.
-    # If the user put a Gmail/Yahoo address as from_email, preserve their display name but use onboarding@resend.dev.
+    # Resend free tier requires onboarding@resend.dev unless a custom domain is verified
     if '<' in sender and '>' in sender:
         display_part = sender.split('<')[0].strip()
         email_part = sender.split('<')[1].split('>')[0].strip()
@@ -68,10 +67,13 @@ def send_email_via_resend(api_key, from_addr, to_email, subject, html_body, qr_r
     }
 
     if qr_raw_bytes:
+        # Both contentId and content_id are supplied for maximum client compatibility
         payload["attachments"] = [
             {
                 "filename": qr_filename,
-                "content": base64.b64encode(qr_raw_bytes).decode('utf-8')
+                "content": base64.b64encode(qr_raw_bytes).decode('utf-8'),
+                "contentId": "qr_code_image",
+                "content_id": "qr_code_image"
             }
         ]
 
@@ -160,50 +162,60 @@ def get_active_mail_connection():
 def send_student_qr_email(student, conn=None, from_addr=None):
     """
     Sends an automated email containing student pass info and inline QR code.
-    Supports both Resend API (Port 443) and SMTP (Port 587).
+    Compatible with Gmail mobile app / desktop via CID inline attachment.
     """
     token_str = str(student.unique_token)
     file_content, qr_data_url = generate_qr_code(token_str)
     qr_raw_bytes = file_content.file.getvalue()
 
-    subject = f"Your Attendance Pass & QR Code - {student.name}"
+    subject = f"🎟️ Your Attendance Pass & QR Code - {student.name}"
     
-    # HTML body with inline QR code
     html_body = f"""
-    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f8fafc; border-radius: 12px; color: #1e293b;">
-      <div style="background-color: #4f46e5; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; color: white;">
-        <h1 style="margin: 0; font-size: 24px;">Campus Attendance System</h1>
-        <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">Official Student QR Pass</p>
+    <div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
+      <div style="background-color: #4f46e5; padding: 24px 20px; text-align: center; color: #ffffff;">
+        <div style="display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; margin-bottom: 8px;">
+          OFFICIAL STUDENT PASS
+        </div>
+        <h1 style="margin: 4px 0 0 0; font-size: 24px; font-weight: 800; color: #ffffff;">SmartPass QR System</h1>
+        <p style="margin: 4px 0 0 0; opacity: 0.9; font-size: 13px; color: #ffffff;">Campus Attendance Gateway</p>
       </div>
 
-      <div style="background-color: #ffffff; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e2e8f0; border-top: none;">
-        <p style="font-size: 16px;">Hello <strong>{student.name}</strong>,</p>
-        <p>Your unique QR Code pass for attendance verification has been generated.</p>
+      <div style="padding: 24px 20px; background-color: #ffffff;">
+        <p style="font-size: 16px; margin: 0 0 12px 0; color: #1e293b;">Hello <strong>{student.name}</strong>,</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0; color: #475569; line-height: 1.5;">
+          Your unique QR Code pass for attendance verification has been generated and activated.
+        </p>
 
-        <div style="background-color: #e0e7ff; border-left: 4px solid #4f46e5; padding: 14px 16px; border-radius: 6px; margin: 16px 0;">
-          <p style="margin: 0; font-weight: 700; color: #3730a3; font-size: 0.95rem;">
-            📌 Instructions: Show this QR code at the attendance scanner during check-in.
+        <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 0 0 20px 0;">
+          <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 13px;">
+            📌 Instructions: Show the QR code below at the scanner during attendance check-in.
           </p>
         </div>
 
-        <div style="background-color: #f1f5f9; padding: 16px; border-radius: 8px; margin: 20px 0;">
-          <h3 style="margin-top: 0; color: #334155; font-size: 16px;">Student Profile Details:</h3>
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-            <tr><td style="padding: 4px 0; color: #64748b;">Full Name:</td><td style="padding: 4px 0; font-weight: 600;">{student.name}</td></tr>
-            <tr><td style="padding: 4px 0; color: #64748b;">Email:</td><td style="padding: 4px 0; font-weight: 600;">{student.email}</td></tr>
-            <tr><td style="padding: 4px 0; color: #64748b;">Branch:</td><td style="padding: 4px 0; font-weight: 600;">{student.branch}</td></tr>
-            <tr><td style="padding: 4px 0; color: #64748b;">Year & Section:</td><td style="padding: 4px 0; font-weight: 600;">Year {student.year} - Section {student.section}</td></tr>
-            <tr><td style="padding: 4px 0; color: #64748b;">Pass Token (UUID):</td><td style="padding: 4px 0; font-family: monospace; font-weight: 600; color: #4f46e5;">{token_str}</td></tr>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
+          <h3 style="margin: 0 0 12px 0; color: #334155; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Student Profile:</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
+            <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Full Name:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
+            <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
+            <tr><td style="padding: 5px 0; color: #64748b;">Branch:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch}</td></tr>
+            <tr><td style="padding: 5px 0; color: #64748b;">Year & Section:</td><td style="padding: 5px 0; font-weight: 600;">Year {student.year} - Section {student.section}</td></tr>
+            <tr><td style="padding: 5px 0; color: #64748b;">Pass Token (UUID):</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
           </table>
         </div>
 
         <div style="text-align: center; margin: 24px 0;">
-          <img src="{qr_data_url}" alt="Attendance QR Code" style="width: 220px; height: 220px; border: 4px solid #e2e8f0; border-radius: 12px; padding: 8px; background: white;" />
-          <p style="font-size: 12px; color: #64748b; margin-top: 8px;">Show this QR code at the attendance scanner.</p>
+          <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;">
+            <img src="cid:qr_code_image" alt="Attendance QR Code" width="220" height="220" style="display: block; width: 220px; height: 220px; margin: 0 auto; border: 0;" />
+          </div>
+          <p style="font-size: 13px; color: #64748b; margin: 10px 0 0 0; font-weight: 600;">
+            Present this QR code during attendance check-in
+          </p>
         </div>
 
-        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-        <p style="font-size: 12px; color: #94a3b8; text-align: center;">This is an automated system email sent via Campus Attendance Gateway.</p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+        <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
+          Automated System Email • Campus Attendance Gateway
+        </p>
       </div>
     </div>
     """
@@ -235,7 +247,6 @@ def send_student_qr_email(student, conn=None, from_addr=None):
             error_msg = res_info
     else:
         try:
-            smtp_html = html_body.replace(qr_data_url, "cid:qr_code_image")
             msg = EmailMultiAlternatives(
                 subject=subject,
                 body=f"Hello {student.name}, show this QR code at the attendance scanner. Your pass token is {token_str}",
@@ -243,7 +254,7 @@ def send_student_qr_email(student, conn=None, from_addr=None):
                 to=[student.email],
                 connection=conn
             )
-            msg.attach_alternative(smtp_html, "text/html")
+            msg.attach_alternative(html_body, "text/html")
 
             mime_img = MIMEImage(qr_raw_bytes)
             mime_img.add_header('Content-ID', '<qr_code_image>')
@@ -260,12 +271,15 @@ def send_student_qr_email(student, conn=None, from_addr=None):
             print(f"Email send error logged for {student.email}: {error_msg}")
             status = 'FAILED'
 
+    # Replace cid with data URL for browser inbox preview
+    web_inbox_html = html_body.replace('cid:qr_code_image', qr_data_url)
+
     log_entry = EmailLog.objects.create(
         student=student if (student and student.pk) else None,
         student_name=student.name,
         email=student.email,
         subject=subject,
-        body_html=html_body,
+        body_html=web_inbox_html,
         qr_token=token_str,
         status=status,
         error_message=error_msg
@@ -275,7 +289,7 @@ def send_student_qr_email(student, conn=None, from_addr=None):
 def send_event_qr_email(event_pass, conn=None, from_addr=None):
     """
     Sends an event-scoped automated email containing the student's unique event pass.
-    Supports both Resend API (Port 443) and SMTP (Port 587).
+    Embeds QR code inline inside the card via CID for Gmail mobile app.
     """
     student = event_pass.student
     event = event_pass.event
@@ -290,55 +304,65 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None):
     for s in event.sessions.all().order_by('date', 'id'):
         scheduled_days_html += f"""
         <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 6px 8px; font-weight: 600; color: #4f46e5;">{s.day_label or 'Day'}</td>
-          <td style="padding: 6px 8px;">{s.topic or s.title}</td>
-          <td style="padding: 6px 8px; color: #64748b; font-size: 13px;">{s.date}</td>
+          <td style="padding: 8px 10px; font-weight: 700; color: #4f46e5;">{s.day_label or 'Day'}</td>
+          <td style="padding: 8px 10px; color: #1e293b;">{s.topic or s.title}</td>
+          <td style="padding: 8px 10px; color: #64748b; font-size: 13px;">{s.date}</td>
         </tr>
         """
 
     html_body = f"""
-    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f8fafc; border-radius: 12px; color: #1e293b;">
-      <div style="background-color: #4f46e5; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; color: white;">
-        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 20px;">Official Event Pass</span>
-        <h1 style="margin: 8px 0 4px; font-size: 22px;">{event.title}</h1>
-        <p style="margin: 0; opacity: 0.9; font-size: 13px;">📅 {event.start_date} to {event.end_date}</p>
+    <div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
+      <div style="background-color: #4f46e5; padding: 24px 20px; text-align: center; color: #ffffff;">
+        <div style="display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; margin-bottom: 8px;">
+          OFFICIAL EVENT PASS
+        </div>
+        <h1 style="margin: 6px 0 2px 0; font-size: 24px; font-weight: 800; color: #ffffff;">{event.title}</h1>
+        <p style="margin: 0; opacity: 0.9; font-size: 13px; color: #ffffff;">📅 {event.start_date} to {event.end_date}</p>
       </div>
 
-      <div style="background-color: #ffffff; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e2e8f0; border-top: none;">
-        <p style="font-size: 16px;">Hello <strong>{student.name}</strong>,</p>
-        <p>You have been registered for <strong>{event.title}</strong>. Your dedicated event QR code pass is below.</p>
+      <div style="padding: 24px 20px; background-color: #ffffff;">
+        <p style="font-size: 16px; margin: 0 0 12px 0; color: #1e293b;">Hello <strong>{student.name}</strong>,</p>
+        <p style="font-size: 14px; margin: 0 0 16px 0; color: #475569; line-height: 1.5;">
+          You have been registered for <strong>{event.title}</strong>. Your official scannable QR pass is embedded below.
+        </p>
 
-        <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 16px 0;">
-          <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 0.95rem;">
-            📌 Reusable Pass: This single QR pass is valid for ALL lecture days/slots of {event.title}.
+        <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 0 0 20px 0;">
+          <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 13px;">
+            📌 Reusable Pass: This single QR pass is valid for ALL lecture days of {event.title}.
           </p>
         </div>
 
         {f'''
-        <div style="background-color: #f1f5f9; padding: 14px; border-radius: 8px; margin: 16px 0;">
-          <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 14px;">Event Scheduled Lectures / Days:</h4>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 0 0 20px 0;">
+          <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Event Scheduled Lectures / Days:</h4>
           <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
             {scheduled_days_html}
           </table>
         </div>
         ''' if scheduled_days_html else ''}
 
-        <div style="background-color: #f8fafc; padding: 14px; border-radius: 8px; margin: 16px 0; border: 1px solid #e2e8f0;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-            <tr><td style="padding: 4px 0; color: #64748b;">Attendee:</td><td style="padding: 4px 0; font-weight: 600;">{student.name}</td></tr>
-            <tr><td style="padding: 4px 0; color: #64748b;">Email:</td><td style="padding: 4px 0; font-weight: 600;">{student.email}</td></tr>
-            <tr><td style="padding: 4px 0; color: #64748b;">Branch / Year:</td><td style="padding: 4px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
-            <tr><td style="padding: 4px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 4px 0; font-family: monospace; font-weight: 600; color: #4f46e5;">{token_str}</td></tr>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
+            <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Attendee:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
+            <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
+            <tr><td style="padding: 5px 0; color: #64748b;">Branch / Year:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
+            <tr><td style="padding: 5px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
           </table>
         </div>
 
         <div style="text-align: center; margin: 24px 0;">
-          <img src="{qr_data_url}" alt="Event QR Code" style="width: 220px; height: 220px; border: 4px solid #e2e8f0; border-radius: 12px; padding: 8px; background: white;" />
-          <p style="font-size: 12px; color: #64748b; margin-top: 8px;">Present this QR code during attendance check-in for this event.</p>
+          <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;">
+            <img src="cid:qr_code_image" alt="Event QR Code" width="220" height="220" style="display: block; width: 220px; height: 220px; margin: 0 auto; border: 0;" />
+          </div>
+          <p style="font-size: 13px; color: #64748b; margin: 10px 0 0 0; font-weight: 600;">
+            Present this QR code during attendance check-in for this event.
+          </p>
         </div>
 
-        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-        <p style="font-size: 12px; color: #94a3b8; text-align: center;">This is an automated system email sent via Campus Attendance Gateway.</p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+        <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
+          Official Event Pass • Campus Attendance Gateway
+        </p>
       </div>
     </div>
     """
@@ -369,7 +393,6 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None):
             error_msg = res_info
     else:
         try:
-            smtp_html = html_body.replace(qr_data_url, "cid:qr_code_image")
             msg = EmailMultiAlternatives(
                 subject=subject,
                 body=f"Hello {student.name}, here is your pass for {event.title}. Your pass token is {token_str}",
@@ -377,7 +400,7 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None):
                 to=[student.email],
                 connection=conn
             )
-            msg.attach_alternative(smtp_html, "text/html")
+            msg.attach_alternative(html_body, "text/html")
 
             mime_img = MIMEImage(qr_raw_bytes)
             mime_img.add_header('Content-ID', '<qr_code_image>')
@@ -393,12 +416,14 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None):
             print(f"Event email send error for {student.email}: {error_msg}")
             status = 'FAILED'
 
+    web_inbox_html = html_body.replace('cid:qr_code_image', qr_data_url)
+
     log_entry = EmailLog.objects.create(
         student=student if (student and student.pk) else None,
         student_name=student.name,
         email=student.email,
         subject=subject,
-        body_html=html_body,
+        body_html=web_inbox_html,
         qr_token=token_str,
         status=status,
         error_message=error_msg
@@ -430,55 +455,65 @@ def send_batch_event_qr_emails(passes):
             for s in event.sessions.all().order_by('date', 'id'):
                 scheduled_days_html += f"""
                 <tr style="border-bottom: 1px solid #e2e8f0;">
-                  <td style="padding: 6px 8px; font-weight: 600; color: #4f46e5;">{s.day_label or 'Day'}</td>
-                  <td style="padding: 6px 8px;">{s.topic or s.title}</td>
-                  <td style="padding: 6px 8px; color: #64748b; font-size: 13px;">{s.date}</td>
+                  <td style="padding: 8px 10px; font-weight: 700; color: #4f46e5;">{s.day_label or 'Day'}</td>
+                  <td style="padding: 8px 10px; color: #1e293b;">{s.topic or s.title}</td>
+                  <td style="padding: 8px 10px; color: #64748b; font-size: 13px;">{s.date}</td>
                 </tr>
                 """
 
             html_body = f"""
-            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f8fafc; border-radius: 12px; color: #1e293b;">
-              <div style="background-color: #4f46e5; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; color: white;">
-                <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 20px;">Official Event Pass</span>
-                <h1 style="margin: 8px 0 4px; font-size: 22px;">{event.title}</h1>
-                <p style="margin: 0; opacity: 0.9; font-size: 13px;">📅 {event.start_date} to {event.end_date}</p>
+            <div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
+              <div style="background-color: #4f46e5; padding: 24px 20px; text-align: center; color: #ffffff;">
+                <div style="display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; margin-bottom: 8px;">
+                  OFFICIAL EVENT PASS
+                </div>
+                <h1 style="margin: 6px 0 2px 0; font-size: 24px; font-weight: 800; color: #ffffff;">{event.title}</h1>
+                <p style="margin: 0; opacity: 0.9; font-size: 13px; color: #ffffff;">📅 {event.start_date} to {event.end_date}</p>
               </div>
 
-              <div style="background-color: #ffffff; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e2e8f0; border-top: none;">
-                <p style="font-size: 16px;">Hello <strong>{student.name}</strong>,</p>
-                <p>You have been registered for <strong>{event.title}</strong>. Your dedicated event QR code pass is below.</p>
+              <div style="padding: 24px 20px; background-color: #ffffff;">
+                <p style="font-size: 16px; margin: 0 0 12px 0; color: #1e293b;">Hello <strong>{student.name}</strong>,</p>
+                <p style="font-size: 14px; margin: 0 0 16px 0; color: #475569; line-height: 1.5;">
+                  You have been registered for <strong>{event.title}</strong>. Your official scannable QR pass is embedded below.
+                </p>
 
-                <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 16px 0;">
-                  <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 0.95rem;">
-                    📌 Reusable Pass: This single QR pass is valid for ALL lecture days/slots of {event.title}.
+                <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 0 0 20px 0;">
+                  <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 13px;">
+                    📌 Reusable Pass: This single QR pass is valid for ALL lecture days of {event.title}.
                   </p>
                 </div>
 
                 {f'''
-                <div style="background-color: #f1f5f9; padding: 14px; border-radius: 8px; margin: 16px 0;">
-                  <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 14px;">Event Scheduled Lectures / Days:</h4>
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 0 0 20px 0;">
+                  <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Event Scheduled Lectures / Days:</h4>
                   <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                     {scheduled_days_html}
                   </table>
                 </div>
                 ''' if scheduled_days_html else ''}
 
-                <div style="background-color: #f8fafc; padding: 14px; border-radius: 8px; margin: 16px 0; border: 1px solid #e2e8f0;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                    <tr><td style="padding: 4px 0; color: #64748b;">Attendee:</td><td style="padding: 4px 0; font-weight: 600;">{student.name}</td></tr>
-                    <tr><td style="padding: 4px 0; color: #64748b;">Email:</td><td style="padding: 4px 0; font-weight: 600;">{student.email}</td></tr>
-                    <tr><td style="padding: 4px 0; color: #64748b;">Branch / Year:</td><td style="padding: 4px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
-                    <tr><td style="padding: 4px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 4px 0; font-family: monospace; font-weight: 600; color: #4f46e5;">{token_str}</td></tr>
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
+                    <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Attendee:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
+                    <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
+                    <tr><td style="padding: 5px 0; color: #64748b;">Branch / Year:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
+                    <tr><td style="padding: 5px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
                   </table>
                 </div>
 
                 <div style="text-align: center; margin: 24px 0;">
-                  <img src="{qr_data_url}" alt="Event QR Code" style="width: 220px; height: 220px; border: 4px solid #e2e8f0; border-radius: 12px; padding: 8px; background: white;" />
-                  <p style="font-size: 12px; color: #64748b; margin-top: 8px;">Present this QR code during attendance check-in for this event.</p>
+                  <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;">
+                    <img src="cid:qr_code_image" alt="Event QR Code" width="220" height="220" style="display: block; width: 220px; height: 220px; margin: 0 auto; border: 0;" />
+                  </div>
+                  <p style="font-size: 13px; color: #64748b; margin: 10px 0 0 0; font-weight: 600;">
+                    Present this QR code during attendance check-in for this event.
+                  </p>
                 </div>
 
-                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-                <p style="font-size: 12px; color: #94a3b8; text-align: center;">This is an automated system email sent via Campus Attendance Gateway.</p>
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
+                  Official Event Pass • Campus Attendance Gateway
+                </p>
               </div>
             </div>
             """
@@ -493,6 +528,8 @@ def send_batch_event_qr_emails(passes):
                 qr_filename=f"event_pass_{event.id}_{student.id}.png"
             )
 
+            web_inbox_html = html_body.replace('cid:qr_code_image', qr_data_url)
+
             if ok:
                 event_pass.qr_sent = True
                 event_pass.save(update_fields=['qr_sent'])
@@ -501,7 +538,7 @@ def send_batch_event_qr_emails(passes):
                     student_name=student.name,
                     email=student.email,
                     subject=subject,
-                    body_html=html_body,
+                    body_html=web_inbox_html,
                     qr_token=token_str,
                     status='SENT'
                 )
@@ -511,7 +548,7 @@ def send_batch_event_qr_emails(passes):
                     student_name=student.name,
                     email=student.email,
                     subject=subject,
-                    body_html=html_body,
+                    body_html=web_inbox_html,
                     qr_token=token_str,
                     status='FAILED',
                     error_message=res_info
@@ -552,55 +589,65 @@ def send_batch_event_qr_emails(passes):
             for s in event.sessions.all().order_by('date', 'id'):
                 scheduled_days_html += f"""
                 <tr style="border-bottom: 1px solid #e2e8f0;">
-                  <td style="padding: 6px 8px; font-weight: 600; color: #4f46e5;">{s.day_label or 'Day'}</td>
-                  <td style="padding: 6px 8px;">{s.topic or s.title}</td>
-                  <td style="padding: 6px 8px; color: #64748b; font-size: 13px;">{s.date}</td>
+                  <td style="padding: 8px 10px; font-weight: 700; color: #4f46e5;">{s.day_label or 'Day'}</td>
+                  <td style="padding: 8px 10px; color: #1e293b;">{s.topic or s.title}</td>
+                  <td style="padding: 8px 10px; color: #64748b; font-size: 13px;">{s.date}</td>
                 </tr>
                 """
 
             html_body = f"""
-            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f8fafc; border-radius: 12px; color: #1e293b;">
-              <div style="background-color: #4f46e5; padding: 20px; border-radius: 8px 8px 0 0; text-align: center; color: white;">
-                <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 20px;">Official Event Pass</span>
-                <h1 style="margin: 8px 0 4px; font-size: 22px;">{event.title}</h1>
-                <p style="margin: 0; opacity: 0.9; font-size: 13px;">📅 {event.start_date} to {event.end_date}</p>
+            <div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
+              <div style="background-color: #4f46e5; padding: 24px 20px; text-align: center; color: #ffffff;">
+                <div style="display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; margin-bottom: 8px;">
+                  OFFICIAL EVENT PASS
+                </div>
+                <h1 style="margin: 6px 0 2px 0; font-size: 24px; font-weight: 800; color: #ffffff;">{event.title}</h1>
+                <p style="margin: 0; opacity: 0.9; font-size: 13px; color: #ffffff;">📅 {event.start_date} to {event.end_date}</p>
               </div>
 
-              <div style="background-color: #ffffff; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e2e8f0; border-top: none;">
-                <p style="font-size: 16px;">Hello <strong>{student.name}</strong>,</p>
-                <p>You have been registered for <strong>{event.title}</strong>. Your dedicated event QR code pass is below.</p>
+              <div style="padding: 24px 20px; background-color: #ffffff;">
+                <p style="font-size: 16px; margin: 0 0 12px 0; color: #1e293b;">Hello <strong>{student.name}</strong>,</p>
+                <p style="font-size: 14px; margin: 0 0 16px 0; color: #475569; line-height: 1.5;">
+                  You have been registered for <strong>{event.title}</strong>. Your official scannable QR pass is embedded below.
+                </p>
 
-                <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 16px 0;">
-                  <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 0.95rem;">
-                    📌 Reusable Pass: This single QR pass is valid for ALL lecture days/slots of {event.title}.
+                <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 0 0 20px 0;">
+                  <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 13px;">
+                    📌 Reusable Pass: This single QR pass is valid for ALL lecture days of {event.title}.
                   </p>
                 </div>
 
                 {f'''
-                <div style="background-color: #f1f5f9; padding: 14px; border-radius: 8px; margin: 16px 0;">
-                  <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 14px;">Event Scheduled Lectures / Days:</h4>
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 0 0 20px 0;">
+                  <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Event Scheduled Lectures / Days:</h4>
                   <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                     {scheduled_days_html}
                   </table>
                 </div>
                 ''' if scheduled_days_html else ''}
 
-                <div style="background-color: #f8fafc; padding: 14px; border-radius: 8px; margin: 16px 0; border: 1px solid #e2e8f0;">
-                  <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                    <tr><td style="padding: 4px 0; color: #64748b;">Attendee:</td><td style="padding: 4px 0; font-weight: 600;">{student.name}</td></tr>
-                    <tr><td style="padding: 4px 0; color: #64748b;">Email:</td><td style="padding: 4px 0; font-weight: 600;">{student.email}</td></tr>
-                    <tr><td style="padding: 4px 0; color: #64748b;">Branch / Year:</td><td style="padding: 4px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
-                    <tr><td style="padding: 4px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 4px 0; font-family: monospace; font-weight: 600; color: #4f46e5;">{token_str}</td></tr>
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
+                    <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Attendee:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
+                    <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
+                    <tr><td style="padding: 5px 0; color: #64748b;">Branch / Year:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
+                    <tr><td style="padding: 4px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
                   </table>
                 </div>
 
                 <div style="text-align: center; margin: 24px 0;">
-                  <img src="cid:qr_code_image" alt="Event QR Code" style="width: 220px; height: 220px; border: 4px solid #e2e8f0; border-radius: 12px; padding: 8px; background: white;" />
-                  <p style="font-size: 12px; color: #64748b; margin-top: 8px;">Present this QR code during attendance check-in for this event.</p>
+                  <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;">
+                    <img src="cid:qr_code_image" alt="Event QR Code" width="220" height="220" style="display: block; width: 220px; height: 220px; margin: 0 auto; border: 0;" />
+                  </div>
+                  <p style="font-size: 13px; color: #64748b; margin: 10px 0 0 0; font-weight: 600;">
+                    Present this QR code during attendance check-in for this event.
+                  </p>
                 </div>
 
-                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-                <p style="font-size: 12px; color: #94a3b8; text-align: center;">This is an automated system email sent via Campus Attendance Gateway.</p>
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
+                  Official Event Pass • Campus Attendance Gateway
+                </p>
               </div>
             </div>
             """
