@@ -332,6 +332,10 @@ export default function Scanner({ activeSession, setActiveSession }) {
         console.warn('Error stopping scanner:', err);
       }
       setIsScanning(false);
+      const readerElem = document.getElementById('qr-reader');
+      if (readerElem) {
+        readerElem.style.display = 'none';
+      }
     }
   };
 
@@ -339,42 +343,84 @@ export default function Scanner({ activeSession, setActiveSession }) {
   const startScanner = async (facing = cameraFacing) => {
     setCameraError(null);
     setIsStartingCamera(true);
-    setIsScanning(true); // Ensure DOM element is visible immediately so Html5Qrcode has non-zero dimensions!
 
     try {
-      const readerElem = document.getElementById('qr-reader');
-      if (!readerElem) {
-        setIsStartingCamera(false);
-        setIsScanning(false);
-        return;
+      // 1. Insecure Context Check (Browsers block camera on HTTP except localhost)
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (window.location.protocol !== 'https:' && !isLocal) {
+        throw new Error('INSECURE_CONTEXT');
       }
 
-      // If instance doesn't exist, create it with QR_CODE ONLY & native barcode detector support
-      // Restricting to QR_CODE only makes decoding up to 5x faster!
-      if (!qrCodeInstanceRef.current) {
-        qrCodeInstanceRef.current = new Html5Qrcode('qr-reader', {
-          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
-          },
-          verbose: false
+      // 2. Check if getUserMedia is supported in browser
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('MEDIA_DEVICES_UNSUPPORTED');
+      }
+
+      // 3. EXPLICITLY TRIGGER NATIVE BROWSER CAMERA PERMISSION PROMPT!
+      // This forces the browser (Chrome / Safari) to immediately display:
+      // "Allow SmartPass to access your camera? [Allow] [Block]"
+      let testStream = null;
+      try {
+        testStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facing } }
         });
-      } else if (qrCodeInstanceRef.current.isScanning) {
-        await qrCodeInstanceRef.current.stop();
+      } catch (permErr) {
+        console.warn('Primary getUserMedia constraint attempt failed, trying basic video:', permErr);
+        // Fallback to basic video constraint without facing mode
+        try {
+          testStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (fallbackErr) {
+          console.error('All native getUserMedia attempts failed:', fallbackErr);
+          throw fallbackErr;
+        }
       }
 
-      // ⚡ High-speed full-field scanning (no artificial crop box!)
-      // Omitting qrbox lets decoder scan 100% of the camera stream for instant detection anywhere on screen
+      // Stop test stream immediately so Html5Qrcode gets full hardware control
+      if (testStream) {
+        testStream.getTracks().forEach((track) => track.stop());
+      }
+
+      // 4. Ensure DOM container is mounted and visible with computed layout dimensions
+      setIsScanning(true);
+      const readerElem = document.getElementById('qr-reader');
+      if (readerElem) {
+        readerElem.style.display = 'block';
+      }
+      // Give browser a short tick to layout the DOM element and compute dimensions
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      // 5. Cleanly reset or create Html5Qrcode instance
+      if (qrCodeInstanceRef.current) {
+        try {
+          if (qrCodeInstanceRef.current.isScanning) {
+            await qrCodeInstanceRef.current.stop();
+          }
+          await qrCodeInstanceRef.current.clear();
+        } catch (e) {
+          console.warn('Resetting qrCodeInstance warning:', e);
+        }
+        qrCodeInstanceRef.current = null;
+      }
+
+      qrCodeInstanceRef.current = new Html5Qrcode('qr-reader', {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        },
+        verbose: false
+      });
+
+      // 6. High-speed full-field scanning (no artificial crop box!)
       const qrConfig = {
-        fps: 24, // 24 scans per second (instant <45ms detection upon seeing pass)
+        fps: 24, // Instant <45ms detection upon seeing pass
         disableFlip: facing === 'environment'
       };
 
-      // Camera constraints: Request sharp HD 720p stream
+      // Camera constraints: Use ideal values rather than min values to prevent OverconstrainedError on portrait mobile
       const cameraConstraints = {
-        facingMode: facing,
-        width: { min: 640, ideal: 1280, max: 1920 },
-        height: { min: 480, ideal: 720, max: 1080 }
+        facingMode: { ideal: facing },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
       };
 
       try {
@@ -384,13 +430,10 @@ export default function Scanner({ activeSession, setActiveSession }) {
           (decodedText) => {
             handleScanSuccess(decodedText);
           },
-          () => {
-            // Ignore frame non-matches
-          }
+          () => {}
         );
       } catch (startErr) {
-        // Graceful fallback if device browser rejects width/height hints
-        console.warn('HD camera constraints rejected, falling back to default:', startErr);
+        console.warn('Ideal camera constraints rejected, falling back to minimal facingMode:', startErr);
         await qrCodeInstanceRef.current.start(
           { facingMode: facing },
           qrConfig,
@@ -404,17 +447,35 @@ export default function Scanner({ activeSession, setActiveSession }) {
       setCameraFacing(facing);
 
       // Inspect hardware capabilities once stream begins
-      setTimeout(detectCameraFeatures, 250);
+      setTimeout(detectCameraFeatures, 300);
     } catch (err) {
       console.error('Failed to start camera:', err);
-      let errorMsg = 'Could not access camera. Please allow camera permissions in your browser.';
-      if (err?.name === 'NotAllowedError' || String(err).includes('Permission')) {
-        errorMsg = 'Camera permission was denied. Please allow camera access in browser settings.';
-      } else if (err?.name === 'NotFoundError' || String(err).includes('NotFound')) {
-        errorMsg = 'No suitable camera found on this device.';
+      let errorMsg = 'Could not access camera. Please check your browser camera permissions.';
+      const errStr = String(err).toLowerCase();
+
+      if (err.message === 'INSECURE_CONTEXT') {
+        errorMsg = '🔒 Camera permission requires HTTPS on mobile devices. Please open the secure HTTPS URL (https://smart-pass-ub9z.onrender.com).';
+      } else if (
+        err.name === 'NotAllowedError' ||
+        err.name === 'PermissionDeniedError' ||
+        errStr.includes('denied') ||
+        errStr.includes('permission')
+      ) {
+        errorMsg = '🚫 Camera permission was denied. Please tap the lock icon 🔒 (or site settings) in your browser address bar, set Camera to "Allow", and refresh.';
+      } else if (err.message === 'MEDIA_DEVICES_UNSUPPORTED') {
+        errorMsg = 'Camera API is not supported in this browser. Please open in Google Chrome or Safari.';
+      } else if (err.name === 'NotFoundError' || errStr.includes('notfound') || errStr.includes('no camera')) {
+        errorMsg = 'No active camera was detected on this device.';
+      } else if (err.name === 'NotReadableError' || errStr.includes('in use') || errStr.includes('not readable')) {
+        errorMsg = 'Camera is in use by another application. Please close other camera apps and try again.';
       }
+
       setCameraError(errorMsg);
       setIsScanning(false);
+      const readerElem = document.getElementById('qr-reader');
+      if (readerElem) {
+        readerElem.style.display = 'none';
+      }
     } finally {
       setIsStartingCamera(false);
     }
@@ -896,23 +957,45 @@ export default function Scanner({ activeSession, setActiveSession }) {
           )}
 
           {/* Error Message if permission denied */}
+          {/* Error Message if permission denied */}
           {cameraError && (
             <div
               style={{
                 margin: '1rem',
-                padding: '12px 16px',
-                background: 'var(--danger-bg)',
-                border: '1px solid var(--danger-border)',
-                borderRadius: '8px',
-                color: '#f87171',
-                fontSize: '0.85rem',
+                padding: '14px 16px',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                borderRadius: '10px',
+                color: '#fca5a5',
+                fontSize: '0.88rem',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
+                flexDirection: 'column',
+                gap: '8px',
+                textAlign: 'left'
               }}
             >
-              <AlertTriangle size={18} style={{ shrink: 0 }} />
-              <span>{cameraError}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertTriangle size={18} style={{ flexShrink: 0, color: '#f87171' }} />
+                <span style={{ fontWeight: 700, color: '#f87171', fontSize: '0.92rem' }}>Camera Access Required</span>
+              </div>
+              <div style={{ fontSize: '0.85rem', color: '#fecaca', lineHeight: '1.45' }}>
+                {cameraError}
+              </div>
+              <div style={{ marginTop: '4px', display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={() => startScanner(cameraFacing)}
+                  style={{
+                    fontSize: '0.82rem',
+                    padding: '8px 16px',
+                    fontWeight: 600,
+                    borderRadius: '8px'
+                  }}
+                >
+                  <Play size={14} /> Allow Permission & Start Camera
+                </button>
+              </div>
             </div>
           )}
         </div>
