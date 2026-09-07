@@ -362,7 +362,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
       let testStream = null;
       try {
         testStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: facing } }
+          video: { facingMode: facing === 'environment' ? 'environment' : 'user' }
         });
       } catch (permErr) {
         console.warn('Primary getUserMedia constraint attempt failed, trying basic video:', permErr);
@@ -410,17 +410,29 @@ export default function Scanner({ activeSession, setActiveSession }) {
         verbose: false
       });
 
-      // 6. Discover available cameras or use standard facingMode string
+      // 6. Camera selection: ALWAYS prioritize BACK camera by default for scanner
       let cameraIdOrConfig = { facingMode: facing };
       try {
         const devices = await Html5Qrcode.getCameras();
         if (devices && devices.length > 0) {
           if (facing === 'environment') {
-            const backCam = devices.find((d) => /back|rear|environment/i.test(d.label));
-            cameraIdOrConfig = backCam ? backCam.id : devices[devices.length - 1].id;
+            // Find back/rear camera explicitly by label
+            const backCam = devices.find((d) =>
+              /back|rear|environment|world|facing back|camera2 0|camera 0/i.test(d.label)
+            );
+            if (backCam) {
+              cameraIdOrConfig = backCam.id;
+            } else {
+              // Exclude known front cameras
+              const nonFront = devices.find((d) => !/front|user|selfie|facing front|camera2 1/i.test(d.label));
+              cameraIdOrConfig = nonFront ? nonFront.id : { facingMode: 'environment' };
+            }
           } else {
-            const frontCam = devices.find((d) => /front|user|selfie/i.test(d.label));
-            cameraIdOrConfig = frontCam ? frontCam.id : devices[0].id;
+            // Front camera requested
+            const frontCam = devices.find((d) =>
+              /front|user|selfie|facing front|camera2 1/i.test(d.label)
+            );
+            cameraIdOrConfig = frontCam ? frontCam.id : { facingMode: 'user' };
           }
         }
       } catch (camErr) {
@@ -433,6 +445,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
         fps: 24, // Instant <45ms detection
         disableFlip: facing === 'environment',
         videoConstraints: {
+          facingMode: facing === 'environment' ? 'environment' : 'user',
           width: { ideal: 1280 },
           height: { ideal: 720 }
         }
