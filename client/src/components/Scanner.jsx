@@ -135,29 +135,35 @@ export default function Scanner({ activeSession, setActiveSession }) {
   const startScanner = async (facing = cameraFacing) => {
     setCameraError(null);
     setIsStartingCamera(true);
+    setIsScanning(true); // Ensure DOM element is visible immediately so Html5Qrcode has non-zero dimensions!
 
     try {
       const readerElem = document.getElementById('qr-reader');
       if (!readerElem) {
         setIsStartingCamera(false);
+        setIsScanning(false);
         return;
       }
 
-      // If instance doesn't exist, create it
+      // If instance doesn't exist, create it with native barcode detector support
       if (!qrCodeInstanceRef.current) {
-        qrCodeInstanceRef.current = new Html5Qrcode('qr-reader');
+        qrCodeInstanceRef.current = new Html5Qrcode('qr-reader', {
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          },
+          verbose: false
+        });
       } else if (qrCodeInstanceRef.current.isScanning) {
         await qrCodeInstanceRef.current.stop();
       }
 
       const qrConfig = {
-        fps: 15,
+        fps: 20,
+        aspectRatio: 1.0,
         qrbox: (viewfinderWidth, viewfinderHeight) => {
           const edge = Math.min(viewfinderWidth, viewfinderHeight);
-          const size = Math.floor(edge * 0.75);
-          return { width: Math.max(180, Math.min(280, size)), height: Math.max(180, Math.min(280, size)) };
-        },
-        aspectRatio: 1.0
+          return { width: Math.max(220, Math.floor(edge * 0.85)), height: Math.max(220, Math.floor(edge * 0.85)) };
+        }
       };
 
       await qrCodeInstanceRef.current.start(
@@ -171,7 +177,6 @@ export default function Scanner({ activeSession, setActiveSession }) {
         }
       );
 
-      setIsScanning(true);
       setCameraFacing(facing);
     } catch (err) {
       console.error('Failed to start camera:', err);
@@ -515,14 +520,31 @@ export default function Scanner({ activeSession, setActiveSession }) {
               <p style={{ fontSize: '0.85rem', maxWidth: '320px', marginBottom: '1.25rem' }}>
                 Click <strong>"Start Scan"</strong> below to open camera or upload a QR image file directly.
               </p>
-              <button
-                className="btn btn-primary"
-                onClick={() => startScanner(cameraFacing)}
-                disabled={isStartingCamera}
-                style={{ minWidth: '180px' }}
-              >
-                <Play size={16} /> {isStartingCamera ? 'Opening Camera...' : 'Start Camera Scanner'}
-              </button>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => startScanner(cameraFacing)}
+                  disabled={isStartingCamera}
+                  style={{ minWidth: '180px' }}
+                >
+                  <Play size={16} /> {isStartingCamera ? 'Opening Camera...' : 'Start Camera Scanner'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ minWidth: '160px' }}
+                >
+                  <UploadCloud size={16} /> Upload QR Image
+                </button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                />
+              </div>
             </div>
           )}
 
@@ -548,7 +570,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
           )}
         </div>
 
-        {/* UNIFIED SINGLE START / CLOSE TOGGLE BUTTON */}
+        {/* SCANNER CONTROLS BAR */}
         <div
           className="scanner-controls-bar"
           style={{
@@ -559,51 +581,106 @@ export default function Scanner({ activeSession, setActiveSession }) {
             border: '1px solid var(--border)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            gap: '12px',
+            flexWrap: 'wrap'
           }}
         >
           {isScanning ? (
-            <button
-              type="button"
-              className="btn btn-danger"
-              onClick={stopScanner}
-              style={{
-                width: '100%',
-                maxWidth: '340px',
-                padding: '12px 20px',
-                fontSize: '1rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <Square size={18} />
-              <span>⏹ Close / Stop Scanner</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={stopScanner}
+                style={{
+                  padding: '12px 20px',
+                  fontSize: '0.95rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Square size={18} />
+                <span>⏹ Close Camera</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={toggleCameraFacing}
+                style={{
+                  padding: '12px 16px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <RefreshCw size={16} />
+                <span>Flip Camera ({cameraFacing === 'environment' ? 'Back' : 'Front'})</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  padding: '12px 16px',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <UploadCloud size={16} />
+                <span>Upload QR Image</span>
+              </button>
+            </>
           ) : (
-            <button
-              type="button"
-              className="btn btn-success"
-              onClick={() => startScanner(cameraFacing)}
-              disabled={isStartingCamera}
-              style={{
-                width: '100%',
-                maxWidth: '340px',
-                padding: '12px 20px',
-                fontSize: '1rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <Play size={18} />
-              <span>{isStartingCamera ? 'Opening Camera...' : '▶ Start Scanner'}</span>
-            </button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-success"
+                onClick={() => startScanner(cameraFacing)}
+                disabled={isStartingCamera}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Play size={18} />
+                <span>{isStartingCamera ? 'Opening Camera...' : '▶ Start Camera Scanner'}</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  padding: '12px 20px',
+                  fontSize: '0.95rem',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <UploadCloud size={18} />
+                <span>Upload QR Image File</span>
+              </button>
+            </div>
           )}
+          <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            accept="image/*"
+            onChange={handleFileUpload}
+          />
         </div>
 
         {/* Scan Result Feedback Card */}

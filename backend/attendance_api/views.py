@@ -929,14 +929,19 @@ def attendance_scan_view(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
     # 2. Check Token (UUID) - Supports Event-Specific Passes and Student Tokens
-    try:
-        val_uuid = uuid.UUID(token_str)
-    except ValueError:
-        return Response({
-            'success': False,
-            'error_type': 'INVALID_TOKEN',
-            'message': 'Unrecognized QR Code format! Invalid UUID token.'
-        }, status=status.HTTP_404_NOT_FOUND)
+    import re
+    uuid_match = re.search(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', token_str)
+    if uuid_match:
+        val_uuid = uuid.UUID(uuid_match.group(0))
+    else:
+        try:
+            val_uuid = uuid.UUID(token_str)
+        except ValueError:
+            return Response({
+                'success': False,
+                'error_type': 'INVALID_TOKEN',
+                'message': f'Unrecognized QR Code format! Could not find a valid token in: "{token_str[:50]}".'
+            }, status=status.HTTP_404_NOT_FOUND)
 
     event_pass = EventPass.objects.filter(event_token=val_uuid).select_related('event', 'student').first()
 
@@ -953,10 +958,35 @@ def attendance_scan_view(request):
 
         student = event_pass.student
     else:
-        # Fallback to direct Student unique_token
-        try:
-            student = Student.objects.get(unique_token=val_uuid)
-        except Student.DoesNotExist:
+        # Check direct Student unique_token
+        student = Student.objects.filter(unique_token=val_uuid).first()
+        
+        # Fallback: check EmailLog if this QR was dispatched to a student
+        if not student:
+            log_entry = EmailLog.objects.filter(qr_token=str(val_uuid)).first()
+            if log_entry:
+                student = Student.objects.filter(email=log_entry.email.lower()).first()
+                if not student:
+                    student = Student.objects.create(
+                        unique_token=val_uuid,
+                        name=log_entry.student_name or 'Student',
+                        email=log_entry.email.lower(),
+                        branch='CSE',
+                        year='1',
+                        section='A',
+                        qr_sent=True
+                    )
+                # Create the pass for current session's event
+                target_event = session_obj.event or Event.objects.first()
+                if target_event and not EventPass.objects.filter(event=target_event, student=student).exists():
+                    event_pass = EventPass.objects.create(
+                        event=target_event,
+                        student=student,
+                        event_token=val_uuid,
+                        qr_sent=True
+                    )
+
+        if not student:
             return Response({
                 'success': False,
                 'error_type': 'INVALID_TOKEN',
