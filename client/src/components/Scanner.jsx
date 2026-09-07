@@ -381,7 +381,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   ) : (
                     events.map(ev => (
                       <option key={ev.id} value={ev.id}>
-                        {ev.title} ({ev.sessions?.length || 0} Days)
+                        {ev.title}
                       </option>
                     ))
                   )}
@@ -409,16 +409,11 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   {availableDays.length === 0 ? (
                     <option value="">No days added yet (Add in "Events & Days")</option>
                   ) : (
-                    availableDays.map(s => {
-                      const isClosed = !s.is_active || s.status === 'CLOSED';
-                      const prefix = s.day_label ? `${s.day_label} - ` : '';
-                      const name = s.topic || s.title || s.name || 'Lecture Day';
-                      return (
-                        <option key={s.id} value={s.id}>
-                          {prefix}{name} ({s.date}) {isClosed ? '🔒 [CLOSED]' : '⚡ [ACTIVE]'}
-                        </option>
-                      );
-                    })
+                    availableDays.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.day_label || `Day ${availableDays.indexOf(s) + 1}`}
+                      </option>
+                    ))
                   )}
                 </select>
               </div>
