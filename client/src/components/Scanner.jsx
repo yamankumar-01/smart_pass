@@ -410,22 +410,37 @@ export default function Scanner({ activeSession, setActiveSession }) {
         verbose: false
       });
 
-      // 6. High-speed full-field scanning (no artificial crop box!)
-      const qrConfig = {
-        fps: 24, // Instant <45ms detection upon seeing pass
-        disableFlip: facing === 'environment'
-      };
+      // 6. Discover available cameras or use standard facingMode string
+      let cameraIdOrConfig = { facingMode: facing };
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          if (facing === 'environment') {
+            const backCam = devices.find((d) => /back|rear|environment/i.test(d.label));
+            cameraIdOrConfig = backCam ? backCam.id : devices[devices.length - 1].id;
+          } else {
+            const frontCam = devices.find((d) => /front|user|selfie/i.test(d.label));
+            cameraIdOrConfig = frontCam ? frontCam.id : devices[0].id;
+          }
+        }
+      } catch (camErr) {
+        console.warn('Html5Qrcode.getCameras notice (falling back to facingMode):', camErr);
+        cameraIdOrConfig = { facingMode: facing };
+      }
 
-      // Camera constraints: Use ideal values rather than min values to prevent OverconstrainedError on portrait mobile
-      const cameraConstraints = {
-        facingMode: { ideal: facing },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
+      // 7. High-speed scanning configuration with videoConstraints inside configuration
+      const qrConfig = {
+        fps: 24, // Instant <45ms detection
+        disableFlip: facing === 'environment',
+        videoConstraints: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
       };
 
       try {
         await qrCodeInstanceRef.current.start(
-          cameraConstraints,
+          cameraIdOrConfig,
           qrConfig,
           (decodedText) => {
             handleScanSuccess(decodedText);
@@ -433,10 +448,18 @@ export default function Scanner({ activeSession, setActiveSession }) {
           () => {}
         );
       } catch (startErr) {
-        console.warn('Ideal camera constraints rejected, falling back to minimal facingMode:', startErr);
+        console.warn('First start attempt failed, re-instantiating and retrying with basic facingMode:', startErr);
+        try {
+          await qrCodeInstanceRef.current.clear();
+        } catch (e) {}
+        qrCodeInstanceRef.current = new Html5Qrcode('qr-reader', {
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          verbose: false
+        });
         await qrCodeInstanceRef.current.start(
           { facingMode: facing },
-          qrConfig,
+          { fps: 20 },
           (decodedText) => {
             handleScanSuccess(decodedText);
           },
@@ -450,7 +473,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
       setTimeout(detectCameraFeatures, 300);
     } catch (err) {
       console.error('Failed to start camera:', err);
-      let errorMsg = 'Could not access camera. Please check your browser camera permissions.';
+      let errorMsg = `Could not access camera: ${err?.message || String(err)}`;
       const errStr = String(err).toLowerCase();
 
       if (err.message === 'INSECURE_CONTEXT') {
@@ -459,9 +482,10 @@ export default function Scanner({ activeSession, setActiveSession }) {
         err.name === 'NotAllowedError' ||
         err.name === 'PermissionDeniedError' ||
         errStr.includes('denied') ||
-        errStr.includes('permission')
+        errStr.includes('permission') ||
+        errStr.includes('notallowed')
       ) {
-        errorMsg = '🚫 Camera permission was denied. Please tap the lock icon 🔒 (or site settings) in your browser address bar, set Camera to "Allow", and refresh.';
+        errorMsg = '🚫 Camera permission was blocked. Please tap the lock icon 🔒 (or site settings) in your browser address bar, set Camera to "Allow", and refresh.';
       } else if (err.message === 'MEDIA_DEVICES_UNSUPPORTED') {
         errorMsg = 'Camera API is not supported in this browser. Please open in Google Chrome or Safari.';
       } else if (err.name === 'NotFoundError' || errStr.includes('notfound') || errStr.includes('no camera')) {
