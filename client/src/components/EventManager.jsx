@@ -101,6 +101,18 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
     }
   };
 
+  const handleDeleteSession = async (sessionId, dayLabel, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete ${dayLabel || 'this day'}? All attendance records for this day will also be removed.`)) return;
+    try {
+      await api.delete(`/sessions/${sessionId}/`);
+      loadEvents();
+    } catch (err) {
+      console.error('Failed to delete day session:', err);
+      alert('Failed to delete day.');
+    }
+  };
+
   return (
     <div className="event-manager-page">
       <div className="page-header">
@@ -210,14 +222,25 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
                           </div>
                         </div>
 
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                          onClick={() => onSelectSessionForScan && onSelectSessionForScan(sess)}
-                          title="Open Live Scanner for this Day"
-                        >
-                          <Play size={12} /> Scan
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => onSelectSessionForScan && onSelectSessionForScan(sess)}
+                            title="Open Live Scanner for this Day"
+                          >
+                            <Play size={12} /> Scan
+                          </button>
+
+                          <button
+                            className="btn btn-danger"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            onClick={(e) => handleDeleteSession(sess.id, sess.day_label, e)}
+                            title={`Delete ${sess.day_label || 'Day'}`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
