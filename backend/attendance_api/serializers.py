@@ -101,7 +101,7 @@ class EmailLogSerializer(serializers.ModelSerializer):
 class SMTPSettingSerializer(serializers.ModelSerializer):
     class Meta:
         model = SMTPSetting
-        fields = ['id', 'provider', 'resend_api_key', 'host', 'port', 'use_tls', 'user', 'password', 'from_name', 'from_email', 'is_active']
+        fields = ['id', 'provider', 'brevo_api_key', 'resend_api_key', 'host', 'port', 'use_tls', 'user', 'password', 'from_name', 'from_email', 'is_active']
         extra_kwargs = {
             'password': {'write_only': True}
         }

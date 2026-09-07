@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Server, Save, Send, ShieldCheck, CheckCircle2, AlertCircle, 
   HelpCircle, Mail, Zap, Key, Plus, Trash2, Edit3, Power, 
-  RefreshCw, Layers, Users, Info, ArrowRight, Check
+  RefreshCw, Layers, Users, Info, Sparkles, ExternalLink
 } from 'lucide-react';
 import api from '../api/axios';
 
@@ -16,7 +16,8 @@ export default function SmtpSettings() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null); // null means creating new
   const [formData, setFormData] = useState({
-    provider: 'resend',
+    provider: 'brevo',
+    brevo_api_key: '',
     resend_api_key: '',
     host: 'smtp.gmail.com',
     port: 587,
@@ -24,7 +25,7 @@ export default function SmtpSettings() {
     user: '',
     password: '',
     from_name: 'Aarambh Attendance System',
-    from_email: 'onboarding@resend.dev',
+    from_email: '',
     is_active: true
   });
   const [saving, setSaving] = useState(false);
@@ -67,7 +68,8 @@ export default function SmtpSettings() {
   const openAddForm = () => {
     setEditingId(null);
     setFormData({
-      provider: 'resend',
+      provider: 'brevo',
+      brevo_api_key: '',
       resend_api_key: '',
       host: 'smtp.gmail.com',
       port: 587,
@@ -75,7 +77,7 @@ export default function SmtpSettings() {
       user: '',
       password: '',
       from_name: 'Aarambh Attendance System',
-      from_email: 'onboarding@resend.dev',
+      from_email: '',
       is_active: true
     });
     setIsFormOpen(true);
@@ -85,7 +87,8 @@ export default function SmtpSettings() {
   const openEditForm = (acc) => {
     setEditingId(acc.id);
     setFormData({
-      provider: acc.provider || 'resend',
+      provider: acc.provider || 'brevo',
+      brevo_api_key: acc.brevo_api_key || '',
       resend_api_key: acc.resend_api_key || '',
       host: acc.host || 'smtp.gmail.com',
       port: acc.port || 587,
@@ -93,7 +96,7 @@ export default function SmtpSettings() {
       user: acc.user || '',
       password: '', // leave empty unless changing
       from_name: acc.from_name || 'Aarambh Attendance System',
-      from_email: acc.from_email || (acc.provider === 'resend' ? 'onboarding@resend.dev' : ''),
+      from_email: acc.from_email || '',
       is_active: acc.is_active !== undefined ? acc.is_active : true
     });
     setIsFormOpen(true);
@@ -173,8 +176,8 @@ export default function SmtpSettings() {
       {/* Header */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div className="page-title">
-          <h2>Email Gateway & Multi-Sender Load Balancing</h2>
-          <p>Deliver official QR event passes using multiple sender accounts rotated in Round-Robin mode to bypass daily limits.</p>
+          <h2>Email Gateway & Multi-Sender Setup</h2>
+          <p>Send QR passes from Render Cloud using Brevo (300 free emails/day, no domain required) or Gmail SMTP.</p>
         </div>
 
         <button 
@@ -194,10 +197,10 @@ export default function SmtpSettings() {
         gap: '1rem',
         marginBottom: '1.5rem'
       }}>
-        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #6366f1', background: 'var(--card-bg, #1e293b)' }}>
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #0284c7', background: 'var(--card-bg, #1e293b)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>Active Senders</span>
-            <Users size={20} color="#6366f1" />
+            <Users size={20} color="#0284c7" />
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-main, #f8fafc)' }}>
             {activeCount} <span style={{ fontSize: '0.9rem', fontWeight: 500, opacity: 0.7 }}>/ {accounts.length} total</span>
@@ -216,57 +219,37 @@ export default function SmtpSettings() {
             ~{totalCapacity.toLocaleString()} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>emails / 24h</span>
           </div>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            (500 emails / active account)
+            Multi-Account Round-Robin Rotation Active
           </div>
         </div>
 
-        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #f59e0b', background: 'var(--card-bg, #1e293b)' }}>
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #6366f1', background: 'var(--card-bg, #1e293b)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>Dispatch Algorithm</span>
-            <Layers size={20} color="#f59e0b" />
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>Recommended for Cloud</span>
+            <Sparkles size={20} color="#6366f1" />
           </div>
           <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main, #f8fafc)', marginTop: '6px' }}>
-            Round-Robin Rotation
+            Brevo (Port 443 HTTPS)
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Evenly splits batches across all active accounts
+          <div style={{ fontSize: '0.8rem', color: '#38bdf8', marginTop: '4px', fontWeight: 600 }}>
+            ✓ No domain needed • Sends to any student
           </div>
         </div>
       </div>
 
-      {/* Daily Limits FAQ Guide */}
-      <div className="card" style={{ marginBottom: '1.5rem', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+      {/* Guide Banner */}
+      <div className="card" style={{ marginBottom: '1.5rem', background: 'rgba(2, 132, 199, 0.06)', border: '1px solid rgba(2, 132, 199, 0.3)' }}>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-          <Info size={22} color="#6366f1" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <Sparkles size={22} color="#0284c7" style={{ flexShrink: 0, marginTop: '2px' }} />
           <div style={{ flex: 1 }}>
             <h4 style={{ margin: '0 0 6px 0', fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-main, #f8fafc)' }}>
-              Ek Email Se Kitne Mail Bhej Sakte Hain? (Daily Limits Explained)
+              Render Cloud Par Email Bhejne Ka 100% Free Tareeqa (Brevo)
             </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px', marginTop: '8px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <div style={{ fontWeight: 700, color: '#f8fafc', fontSize: '0.85rem' }}>📧 Personal Gmail (@gmail.com)</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Strict limit: <strong>500 emails / 24 hours</strong> (rolling limit). If exceeded, account is paused for 24h.
-                </div>
-              </div>
-
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <div style={{ fontWeight: 700, color: '#f8fafc', fontSize: '0.85rem' }}>🎓 Google Workspace / College Email</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Limit: <strong>2,000 emails / 24 hours</strong> for custom domain / institutional accounts.
-                </div>
-              </div>
-
-              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <div style={{ fontWeight: 700, color: '#f8fafc', fontSize: '0.85rem' }}>⚡ Resend HTTPS API (Free Tier)</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  <strong>100 emails/day</strong> (3,000 emails/month free). Operates over Port 443 (ideal for Render Cloud).
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: '10px', fontSize: '0.82rem', color: '#10b981', fontWeight: 600 }}>
-              💡 <strong>Pro Tip:</strong> Agar aapko 1,500 students ko passes bhejne hain, toh bas 3 Gmail accounts ya multiple Resend keys yahan add kar dein — system batch ko 500-500 mein divide karke automatically bhej dega!
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '0 0 8px 0', lineHeight: '1.5' }}>
+              Render cloud par Gmail ke ports (25, 465, 587) block rehte hain aur Resend sandbox me domain verification mangta hai. Isliye <strong>Brevo (Sendinblue)</strong> sabse best hai — ye HTTPS Port 443 par chalta hai aur isme <strong>bina kisi domain ke</strong> sabhi students ko 300 free emails/day bheje ja sakte hain!
+            </p>
+            <div style={{ fontSize: '0.82rem', color: '#38bdf8', fontWeight: 600 }}>
+              📌 Setup in 2 mins: brevo.com par free sign up karein ➔ Senders me apna email verify karein ➔ SMTP & API me API Key banakar yahan daalein!
             </div>
           </div>
         </div>
@@ -274,10 +257,10 @@ export default function SmtpSettings() {
 
       {/* Add / Edit Form Modal / Accordion */}
       {isFormOpen && (
-        <div className="card" style={{ marginBottom: '1.5rem', border: '2px solid #6366f1', background: 'var(--card-bg, #1e293b)' }}>
+        <div className="card" style={{ marginBottom: '1.5rem', border: '2px solid #0284c7', background: 'var(--card-bg, #1e293b)' }}>
           <div className="card-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem' }}>
             <div className="card-title">
-              <ShieldCheck size={20} color="#6366f1" />
+              <ShieldCheck size={20} color="#0284c7" />
               <span>{editingId ? `Edit Sender Account (#${editingId})` : 'Add New Sender Account'}</span>
             </div>
 
@@ -293,27 +276,98 @@ export default function SmtpSettings() {
 
           <form onSubmit={handleSave} style={{ marginTop: '1rem' }}>
             {/* Provider Tabs */}
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className={`btn ${formData.provider === 'brevo' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ flex: 1, minWidth: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
+                onClick={() => setFormData({ ...formData, provider: 'brevo' })}
+              >
+                <Sparkles size={18} /> Brevo API (⭐ Recommended - No Domain Needed)
+              </button>
+
               <button
                 type="button"
                 className={`btn ${formData.provider === 'resend' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
+                style={{ flex: 1, minWidth: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
                 onClick={() => setFormData({ ...formData, provider: 'resend', from_email: formData.from_email || 'onboarding@resend.dev' })}
               >
-                <Zap size={18} /> Resend API (Port 443 - Recommended for Cloud)
+                <Zap size={18} /> Resend API (Requires Domain)
               </button>
 
               <button
                 type="button"
                 className={`btn ${formData.provider === 'smtp' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
+                style={{ flex: 1, minWidth: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
                 onClick={() => setFormData({ ...formData, provider: 'smtp' })}
               >
-                <Server size={18} /> Gmail SMTP (Port 587 - Localhost / VPS)
+                <Server size={18} /> Gmail SMTP (Localhost Only)
               </button>
             </div>
 
-            {formData.provider === 'resend' ? (
+            {formData.provider === 'brevo' && (
+              <div>
+                <div className="card" style={{ marginBottom: '1rem', background: 'rgba(2, 132, 199, 0.08)', padding: '12px 16px', border: '1px solid rgba(2, 132, 199, 0.2)' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#38bdf8', marginBottom: '4px' }}>
+                    Brevo Free Setup (300 emails/day):
+                  </div>
+                  <ol style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.2rem', lineHeight: '1.6' }}>
+                    <li><a href="https://onboarding.brevo.com/account/register" target="_blank" rel="noopener noreferrer" style={{ color: '#38bdf8', fontWeight: 600 }}>brevo.com</a> par free account banayein.</li>
+                    <li>Brevo me <strong>"Senders & IP"</strong> par jayein ➔ <strong>"Add a sender"</strong> dabayein ➔ Apna email daalein aur inbox me aayi link se verify karein.</li>
+                    <li>Upar profile menu me <strong>"SMTP & API"</strong> ➔ <strong>"API Keys"</strong> ➔ <strong>"Generate a new API key"</strong> dabayein.</li>
+                    <li>Key copy karke niche <strong>Brevo API Key</strong> me daalein!</li>
+                  </ol>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Key size={14} color="#0284c7" /> Brevo API Key *
+                  </label>
+                  <input
+                    type="password"
+                    className="form-input"
+                    placeholder="xkeysib-..."
+                    value={formData.brevo_api_key}
+                    onChange={(e) => setFormData({ ...formData, brevo_api_key: e.target.value })}
+                    required={formData.provider === 'brevo'}
+                    style={{ fontFamily: 'monospace' }}
+                  />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Generate free key at <a href="https://app.brevo.com/settings/keys/api" target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7' }}>app.brevo.com/settings/keys/api</a>
+                  </span>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Sender Display Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Aarambh Attendance System"
+                      value={formData.from_name}
+                      onChange={(e) => setFormData({ ...formData, from_name: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Verified Sender Email Address in Brevo *</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      placeholder="e.g. yunush.mech27@jecrc.ac.in (or your personal gmail)"
+                      value={formData.from_email}
+                      onChange={(e) => setFormData({ ...formData, from_email: e.target.value })}
+                      required={formData.provider === 'brevo'}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                      Must be the email you verified under Brevo ➔ Senders & IP.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {formData.provider === 'resend' && (
               <div>
                 <div className="form-group" style={{ marginBottom: '1.25rem' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -328,9 +382,6 @@ export default function SmtpSettings() {
                     required={formData.provider === 'resend'}
                     style={{ fontFamily: 'monospace' }}
                   />
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                    Free API key from <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" style={{ color: '#6366f1' }}>resend.com/api-keys</a>
-                  </span>
                 </div>
 
                 <div className="form-row">
@@ -350,15 +401,23 @@ export default function SmtpSettings() {
                     <input
                       type="email"
                       className="form-input"
-                      placeholder="onboarding@resend.dev"
+                      placeholder="onboarding@resend.dev (or verified domain)"
                       value={formData.from_email}
                       onChange={(e) => setFormData({ ...formData, from_email: e.target.value })}
                     />
                   </div>
                 </div>
               </div>
-            ) : (
+            )}
+
+            {formData.provider === 'smtp' && (
               <div>
+                <div className="card" style={{ marginBottom: '1rem', background: 'rgba(234, 179, 8, 0.08)', padding: '10px 14px', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--warning)', margin: 0 }}>
+                    ⚠️ Note: Render Cloud blocks SMTP port 587. Use Gmail SMTP only when running the project locally on your laptop.
+                  </p>
+                </div>
+
                 <div className="form-row">
                   <div className="form-group" style={{ gridColumn: 'span 2' }}>
                     <label>SMTP Host Server *</label>
@@ -407,9 +466,6 @@ export default function SmtpSettings() {
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       required={!editingId && formData.provider === 'smtp'}
                     />
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                      Generated from myaccount.google.com ➡️ Security ➡️ 2-Step Verification ➡️ App Passwords.
-                    </span>
                   </div>
                 </div>
 
@@ -444,9 +500,9 @@ export default function SmtpSettings() {
                   type="checkbox"
                   checked={formData.is_active}
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                  style={{ width: '18px', height: '18px', accentColor: '#6366f1' }}
+                  style={{ width: '18px', height: '18px', accentColor: '#0284c7' }}
                 />
-                Active (Include in round-robin dispatch pool)
+                Active (Include in dispatch pool)
               </label>
 
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -466,7 +522,7 @@ export default function SmtpSettings() {
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <div className="card-title">
-            <Layers size={20} color="#6366f1" />
+            <Layers size={20} color="#0284c7" />
             <span>Configured Sender Accounts ({accounts.length})</span>
           </div>
 
@@ -484,7 +540,7 @@ export default function SmtpSettings() {
           <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
             <Mail size={40} style={{ opacity: 0.3, marginBottom: '12px' }} />
             <h4 style={{ margin: '0 0 6px 0', color: 'var(--text-main)' }}>No Email Senders Configured Yet</h4>
-            <p style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>Add your first Resend API Key or Gmail SMTP account to start sending automated QR passes.</p>
+            <p style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>Add a Brevo API Key or Gmail SMTP account to start sending automated QR passes.</p>
             <button type="button" className="btn btn-primary" onClick={openAddForm}>
               <Plus size={16} /> Add First Sender Account
             </button>
@@ -492,7 +548,9 @@ export default function SmtpSettings() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '1rem' }}>
             {accounts.map((acc, index) => {
-              const userDisplay = acc.user || acc.from_email || (acc.provider === 'resend' ? 'Resend Free Key' : 'SMTP Server');
+              const userDisplay = acc.from_email || acc.user || (acc.provider === 'brevo' ? 'Brevo API' : acc.provider === 'resend' ? 'Resend Key' : 'Gmail SMTP');
+              const isBrevo = acc.provider === 'brevo';
+              const isResend = acc.provider === 'resend';
               return (
                 <div 
                   key={acc.id} 
@@ -503,7 +561,7 @@ export default function SmtpSettings() {
                     padding: '14px 18px',
                     borderRadius: '10px',
                     background: acc.is_active ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.01)',
-                    border: `1px solid ${acc.is_active ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255,255,255,0.08)'}`,
+                    border: `1px solid ${acc.is_active ? (isBrevo ? 'rgba(2, 132, 199, 0.4)' : isResend ? 'rgba(99, 102, 241, 0.3)' : 'rgba(16, 185, 129, 0.3)') : 'rgba(255,255,255,0.08)'}`,
                     flexWrap: 'wrap',
                     gap: '12px'
                   }}
@@ -513,15 +571,14 @@ export default function SmtpSettings() {
                       width: '42px',
                       height: '42px',
                       borderRadius: '8px',
-                      background: acc.provider === 'resend' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                      background: isBrevo ? 'rgba(2, 132, 199, 0.2)' : isResend ? 'rgba(99, 102, 241, 0.15)' : 'rgba(16, 185, 129, 0.15)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: acc.provider === 'resend' ? '#6366f1' : '#10b981',
-                      fontWeight: 800,
-                      fontSize: '0.85rem'
+                      color: isBrevo ? '#38bdf8' : isResend ? '#6366f1' : '#10b981',
+                      fontWeight: 800
                     }}>
-                      {acc.provider === 'resend' ? <Zap size={22} /> : <Mail size={22} />}
+                      {isBrevo ? <Sparkles size={22} /> : isResend ? <Zap size={22} /> : <Mail size={22} />}
                     </div>
 
                     <div>
@@ -536,10 +593,10 @@ export default function SmtpSettings() {
                           borderRadius: '12px',
                           textTransform: 'uppercase',
                           letterSpacing: '0.5px',
-                          background: acc.provider === 'resend' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                          color: acc.provider === 'resend' ? '#818cf8' : '#34d399'
+                          background: isBrevo ? 'rgba(2, 132, 199, 0.25)' : isResend ? 'rgba(99, 102, 241, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                          color: isBrevo ? '#38bdf8' : isResend ? '#818cf8' : '#34d399'
                         }}>
-                          {acc.provider === 'resend' ? 'Resend API' : 'Gmail SMTP'}
+                          {isBrevo ? 'BREVO API (HTTPS)' : isResend ? 'RESEND API' : 'GMAIL SMTP'}
                         </span>
                         {acc.is_active ? (
                           <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -607,7 +664,7 @@ export default function SmtpSettings() {
         </div>
 
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>
-          Test sending a real QR pass to your email address to confirm gateway delivery and check sender headers.
+          Test sending a real QR pass to any recipient address to confirm gateway delivery.
         </p>
 
         <form onSubmit={handleTestSend} style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -615,7 +672,7 @@ export default function SmtpSettings() {
             <input
               type="email"
               className="form-input"
-              placeholder="Enter target recipient email..."
+              placeholder="Enter target student recipient email (e.g. alizaimran.it27@jecrc.ac.in)..."
               value={testEmail}
               onChange={(e) => setTestEmail(e.target.value)}
               required
@@ -632,7 +689,7 @@ export default function SmtpSettings() {
               <option value="auto">Auto (First Active Sender)</option>
               {accounts.map(a => (
                 <option key={a.id} value={a.id}>
-                  {a.user || a.from_email} ({a.provider.toUpperCase()})
+                  {a.from_email || a.user} ({a.provider.toUpperCase()})
                 </option>
               ))}
             </select>

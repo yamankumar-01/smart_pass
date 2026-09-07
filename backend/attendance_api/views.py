@@ -1025,7 +1025,8 @@ def smtp_settings_view(request):
         for s in all_settings:
             accounts_data.append({
                 'id': s.id,
-                'provider': s.provider or 'resend',
+                'provider': s.provider or 'brevo',
+                'brevo_api_key': s.brevo_api_key or '',
                 'resend_api_key': s.resend_api_key or '',
                 'host': s.host or 'smtp.gmail.com',
                 'port': s.port or 587,
@@ -1045,7 +1046,8 @@ def smtp_settings_view(request):
             'estimated_daily_capacity': active_count * 500,
             # Backward compatibility fields
             'id': first_active.id if first_active else None,
-            'provider': getattr(first_active, 'provider', 'resend'),
+            'provider': getattr(first_active, 'provider', 'brevo'),
+            'brevo_api_key': getattr(first_active, 'brevo_api_key', ''),
             'resend_api_key': getattr(first_active, 'resend_api_key', ''),
             'host': getattr(first_active, 'host', 'smtp.gmail.com'),
             'port': getattr(first_active, 'port', 587),
@@ -1058,7 +1060,8 @@ def smtp_settings_view(request):
 
     if request.method == 'POST':
         data = request.data
-        provider = data.get('provider', 'resend')
+        provider = data.get('provider', 'brevo')
+        brevo_key = data.get('brevo_api_key', '').strip()
         resend_key = data.get('resend_api_key', '').strip()
         account_id = data.get('id') or data.get('account_id')
         action = data.get('action') # 'create' or 'update'
@@ -1067,6 +1070,7 @@ def smtp_settings_view(request):
         if action == 'create' or account_id == 'new' or (not account_id and not all_settings):
             new_acc = SMTPSetting.objects.create(
                 provider=provider,
+                brevo_api_key=brevo_key,
                 resend_api_key=resend_key,
                 host=data.get('host', 'smtp.gmail.com'),
                 port=int(data.get('port', 587)),
@@ -1074,11 +1078,11 @@ def smtp_settings_view(request):
                 user=data.get('user', '').strip(),
                 password=data.get('password', '').strip(),
                 from_name=data.get('from_name', 'Aarambh Attendance System'),
-                from_email=data.get('from_email', 'onboarding@resend.dev'),
+                from_email=data.get('from_email', '').strip() or 'onboarding@resend.dev',
                 is_active=data.get('is_active', True)
             )
             return Response({
-                'message': f'New sender account "{new_acc.user or new_acc.from_email or "Resend"}" added and activated successfully!',
+                'message': f'New sender account "{new_acc.user or new_acc.from_email or provider.upper()}" added and activated successfully!',
                 'account_id': new_acc.id
             })
 
@@ -1092,6 +1096,7 @@ def smtp_settings_view(request):
         if not target:
             target = SMTPSetting.objects.create(
                 provider=provider,
+                brevo_api_key=brevo_key,
                 resend_api_key=resend_key,
                 host=data.get('host', 'smtp.gmail.com'),
                 port=int(data.get('port', 587)),
@@ -1099,11 +1104,13 @@ def smtp_settings_view(request):
                 user=data.get('user', '').strip(),
                 password=data.get('password', '').strip(),
                 from_name=data.get('from_name', 'Aarambh Attendance System'),
-                from_email=data.get('from_email', 'onboarding@resend.dev'),
+                from_email=data.get('from_email', '').strip() or 'onboarding@resend.dev',
                 is_active=data.get('is_active', True)
             )
         else:
             target.provider = provider
+            if 'brevo_api_key' in data:
+                target.brevo_api_key = brevo_key
             if 'resend_api_key' in data:
                 target.resend_api_key = resend_key
             target.host = data.get('host', target.host)
@@ -1156,7 +1163,19 @@ def test_send_email_view(request):
     if account_id and str(account_id).isdigit():
         cfg = SMTPSetting.objects.filter(id=int(account_id)).first()
         if cfg:
-            if cfg.provider == 'resend' and cfg.resend_api_key:
+            if cfg.provider == 'brevo' and cfg.brevo_api_key:
+                from_email = cfg.from_email.strip() if cfg.from_email else cfg.user
+                from_name = cfg.from_name.strip() if cfg.from_name else "Aarambh Attendance System"
+                sender = {
+                    'provider': 'brevo',
+                    'brevo_key': cfg.brevo_api_key.strip(),
+                    'from_email': from_email,
+                    'from_name': from_name,
+                    'from_addr': f"{from_name} <{from_email}>",
+                    'account_id': cfg.id,
+                    'user': from_email or 'Brevo API'
+                }
+            elif cfg.provider == 'resend' and cfg.resend_api_key:
                 from_email = cfg.from_email.strip() if cfg.from_email else "onboarding@resend.dev"
                 from_name = cfg.from_name.strip() if cfg.from_name else "Aarambh Attendance System"
                 sender = {

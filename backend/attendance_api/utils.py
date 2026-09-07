@@ -102,16 +102,96 @@ def send_email_via_resend(api_key, from_addr, to_email, subject, html_body, qr_r
     except Exception as e:
         return False, f"Resend Network Error: {str(e)}"
 
+def send_email_via_brevo(api_key, from_name, from_email, to_email, subject, html_body, qr_raw_bytes=None, qr_filename="qr_pass.png"):
+    """
+    Sends an email using Brevo (formerly Sendinblue) REST API over HTTPS (port 443).
+    Allows sending to ANY recipient email address without domain verification.
+    Only sender email address needs to be verified in Brevo.
+    """
+    url = "https://api.brevo.com/v3/smtp/email"
+
+    sender_email = from_email.strip() if from_email else "sender@example.com"
+    sender_name = from_name.strip() if from_name else "Aarambh Attendance System"
+
+    if '<' in sender_email and '>' in sender_email:
+        sender_name = sender_email.split('<')[0].strip() or sender_name
+        sender_email = sender_email.split('<')[1].split('>')[0].strip()
+
+    if qr_raw_bytes:
+        qr_b64 = base64.b64encode(qr_raw_bytes).decode('utf-8')
+        html_formatted = html_body.replace('cid:qr_code_image', f"data:image/png;base64,{qr_b64}")
+    else:
+        html_formatted = html_body
+
+    payload = {
+        "sender": {
+            "name": sender_name,
+            "email": sender_email
+        },
+        "to": [
+            {"email": to_email}
+        ],
+        "subject": subject,
+        "htmlContent": html_formatted
+    }
+
+    if qr_raw_bytes:
+        payload["attachment"] = [
+            {
+                "content": base64.b64encode(qr_raw_bytes).decode('utf-8'),
+                "name": qr_filename
+            }
+        ]
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'api-key': api_key.strip(),
+            'accept': 'application/json',
+            'content-type': 'application/json',
+            'User-Agent': 'SmartPass/1.0'
+        },
+        method='POST'
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            res_data = json.loads(response.read().decode('utf-8'))
+            return True, res_data.get('messageId', 'sent')
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8', errors='ignore')
+        try:
+            err_json = json.loads(error_body)
+            msg = err_json.get('message') or error_body
+        except Exception:
+            msg = error_body
+        return False, f"Brevo API Error ({e.code}): {msg}"
+    except Exception as e:
+        return False, f"Brevo Network Error: {str(e)}"
+
 def get_all_active_mail_senders():
     """
     Returns a list of all active sender configurations for multi-account load balancing.
-    Supports rotating across multiple Gmail SMTP accounts or Resend keys.
+    Supports rotating across Brevo API, Resend API, and Gmail SMTP accounts.
     """
     active_configs = list(SMTPSetting.objects.filter(is_active=True).order_by('id'))
     senders = []
     
     for cfg in active_configs:
-        if cfg.provider == 'resend' and cfg.resend_api_key:
+        if cfg.provider == 'brevo' and cfg.brevo_api_key:
+            from_email = cfg.from_email.strip() if cfg.from_email else cfg.user
+            from_name = cfg.from_name.strip() if cfg.from_name else "Aarambh Attendance System"
+            senders.append({
+                'provider': 'brevo',
+                'brevo_key': cfg.brevo_api_key.strip(),
+                'from_email': from_email,
+                'from_name': from_name,
+                'from_addr': f"{from_name} <{from_email}>",
+                'account_id': cfg.id,
+                'user': from_email or 'Brevo API'
+            })
+        elif cfg.provider == 'resend' and cfg.resend_api_key:
             from_email = cfg.from_email.strip() if cfg.from_email else "onboarding@resend.dev"
             from_name = cfg.from_name.strip() if cfg.from_name else "Aarambh Attendance System"
             senders.append({
@@ -268,7 +348,26 @@ def send_student_qr_email(student, conn=None, from_addr=None, specific_sender=No
     status = 'SENT'
     error_msg = ''
 
-    if provider == 'resend' and sender_cfg.get('resend_key'):
+    if provider == 'brevo' and sender_cfg.get('brevo_key'):
+        ok, res_info = send_email_via_brevo(
+            api_key=sender_cfg['brevo_key'],
+            from_name=sender_cfg.get('from_name', 'Aarambh Attendance System'),
+            from_email=sender_cfg.get('from_email', sender_cfg.get('user', '')),
+            to_email=student.email,
+            subject=subject,
+            html_body=html_body,
+            qr_raw_bytes=qr_raw_bytes,
+            qr_filename=f"qr_pass_{token_str[:8]}.png"
+        )
+        if ok:
+            status = 'SENT'
+            if student.pk:
+                student.qr_sent = True
+                student.save(update_fields=['qr_sent'])
+        else:
+            status = 'FAILED'
+            error_msg = res_info
+    elif provider == 'resend' and sender_cfg.get('resend_key'):
         ok, res_info = send_email_via_resend(
             api_key=sender_cfg['resend_key'],
             from_addr=from_addr,
@@ -420,7 +519,25 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None, specific_sender=N
     status = 'SENT'
     error_msg = ''
 
-    if provider == 'resend' and sender_cfg.get('resend_key'):
+    if provider == 'brevo' and sender_cfg.get('brevo_key'):
+        ok, res_info = send_email_via_brevo(
+            api_key=sender_cfg['brevo_key'],
+            from_name=sender_cfg.get('from_name', 'Aarambh Attendance System'),
+            from_email=sender_cfg.get('from_email', sender_cfg.get('user', '')),
+            to_email=student.email,
+            subject=subject,
+            html_body=html_body,
+            qr_raw_bytes=qr_raw_bytes,
+            qr_filename=f"event_pass_{event.id}_{student.id}.png"
+        )
+        if ok:
+            status = 'SENT'
+            event_pass.qr_sent = True
+            event_pass.save(update_fields=['qr_sent'])
+        else:
+            status = 'FAILED'
+            error_msg = res_info
+    elif provider == 'resend' and sender_cfg.get('resend_key'):
         ok, res_info = send_email_via_resend(
             api_key=sender_cfg['resend_key'],
             from_addr=from_addr,
@@ -576,7 +693,41 @@ def send_batch_event_qr_emails(passes):
         from_addr = sender_cfg.get('from_addr')
         web_inbox_html = html_body.replace('cid:qr_code_image', qr_data_url)
 
-        if provider == 'resend' and sender_cfg.get('resend_key'):
+        if provider == 'brevo' and sender_cfg.get('brevo_key'):
+            ok, res_info = send_email_via_brevo(
+                api_key=sender_cfg['brevo_key'],
+                from_name=sender_cfg.get('from_name', 'Aarambh Attendance System'),
+                from_email=sender_cfg.get('from_email', sender_cfg.get('user', '')),
+                to_email=student.email,
+                subject=subject,
+                html_body=html_body,
+                qr_raw_bytes=qr_raw_bytes,
+                qr_filename=f"event_pass_{event.id}_{student.id}.png"
+            )
+            if ok:
+                event_pass.qr_sent = True
+                event_pass.save(update_fields=['qr_sent'])
+                EmailLog.objects.create(
+                    student=student,
+                    student_name=student.name,
+                    email=student.email,
+                    subject=subject,
+                    body_html=web_inbox_html,
+                    qr_token=token_str,
+                    status='SENT'
+                )
+            else:
+                EmailLog.objects.create(
+                    student=student,
+                    student_name=student.name,
+                    email=student.email,
+                    subject=subject,
+                    body_html=web_inbox_html,
+                    qr_token=token_str,
+                    status='FAILED',
+                    error_message=res_info
+                )
+        elif provider == 'resend' and sender_cfg.get('resend_key'):
             ok, res_info = send_email_via_resend(
                 api_key=sender_cfg['resend_key'],
                 from_addr=from_addr,

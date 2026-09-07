@@ -92,8 +92,9 @@ class EmailLog(models.Model):
         return f"Email to {self.email} ({self.status})"
 
 class SMTPSetting(models.Model):
-    provider = models.CharField(max_length=50, default='resend') # 'resend' or 'smtp'
+    provider = models.CharField(max_length=50, default='brevo') # 'brevo', 'resend', or 'smtp'
     resend_api_key = models.CharField(max_length=255, blank=True, default='')
+    brevo_api_key = models.CharField(max_length=255, blank=True, default='')
     host = models.CharField(max_length=255, default='smtp.gmail.com')
     port = models.IntegerField(default=587)
     use_tls = models.BooleanField(default=True)
