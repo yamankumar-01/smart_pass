@@ -678,6 +678,59 @@ body {
   display: none !important;
 }
 
+/* Futuristic Targeting Overlay & Laser Sweep */
+.scanner-targeting-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.scanner-target-box {
+  position: relative;
+  width: min(78vw, 300px);
+  height: min(78vw, 300px);
+  border: 1px dashed rgba(52, 211, 153, 0.4);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: inset 0 0 25px rgba(16, 185, 129, 0.12);
+}
+
+.scanner-laser-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent 5%, #10b981 30%, #34d399 50%, #10b981 70%, transparent 95%);
+  box-shadow: 0 0 14px #10b981, 0 0 6px #34d399;
+  animation: laserSweep 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes laserSweep {
+  0% { top: 4%; opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { top: 94%; opacity: 0.7; }
+}
+
+.corner-tl, .corner-tr, .corner-bl, .corner-br {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: #34d399;
+  border-style: solid;
+}
+
+.corner-tl { top: 0; left: 0; border-width: 3.5px 0 0 3.5px; border-top-left-radius: 16px; }
+.corner-tr { top: 0; right: 0; border-width: 3.5px 3.5px 0 0; border-top-right-radius: 16px; }
+.corner-bl { bottom: 0; left: 0; border-width: 0 0 3.5px 3.5px; border-bottom-left-radius: 16px; }
+.corner-br { bottom: 0; right: 0; border-width: 0 3.5px 3.5px 0; border-bottom-right-radius: 16px; }
+
 /* Mobile Nav Styles */
 .mobile-menu-toggle {
   display: none;

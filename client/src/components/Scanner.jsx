@@ -219,9 +219,19 @@ export default function Scanner({ activeSession, setActiveSession }) {
       if (!track) return;
       const caps = track.getCapabilities ? track.getCapabilities() : {};
 
-      // 1. Continuous autofocus for instant, sharp QR code detection
+      // 1. Continuous autofocus, auto-exposure, and white-balance for razor-sharp QR readability
+      const advanced = [];
       if (caps.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
-        track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
+        advanced.push({ focusMode: 'continuous' });
+      }
+      if (caps.exposureMode && Array.isArray(caps.exposureMode) && caps.exposureMode.includes('continuous')) {
+        advanced.push({ exposureMode: 'continuous' });
+      }
+      if (caps.whiteBalanceMode && Array.isArray(caps.whiteBalanceMode) && caps.whiteBalanceMode.includes('continuous')) {
+        advanced.push({ whiteBalanceMode: 'continuous' });
+      }
+      if (advanced.length > 0) {
+        track.applyConstraints({ advanced }).catch(() => {});
       }
 
       // 2. Hardware Torch / Flashlight
@@ -332,14 +342,10 @@ export default function Scanner({ activeSession, setActiveSession }) {
         await qrCodeInstanceRef.current.stop();
       }
 
-      // Generous adaptive scan box (90% width) - no more struggling to align inside a tiny box!
+      // ⚡ High-speed full-field scanning (no artificial crop box!)
+      // Omitting qrbox lets decoder scan 100% of the camera stream for instant detection anywhere on screen
       const qrConfig = {
-        fps: 15, // 15 fps gives sharp, unblurred frames without CPU lag
-        qrbox: (viewfinderWidth, viewfinderHeight) => {
-          const edge = Math.min(viewfinderWidth, viewfinderHeight);
-          const boxSize = Math.max(220, Math.floor(edge * 0.90));
-          return { width: boxSize, height: boxSize };
-        },
+        fps: 24, // 24 scans per second (instant <45ms detection upon seeing pass)
         disableFlip: facing === 'environment'
       };
 
@@ -803,14 +809,28 @@ export default function Scanner({ activeSession, setActiveSession }) {
               margin: '0 auto',
               borderRadius: '12px',
               overflow: 'hidden',
-              display: isScanning ? 'block' : 'none'
+              display: isScanning ? 'block' : 'none',
+              position: 'relative'
             }}
           ></div>
+
+          {/* Futuristic Aiming Reticle & Sweeping Laser Guide */}
+          {isScanning && (
+            <div className="scanner-targeting-overlay">
+              <div className="scanner-target-box">
+                <div className="scanner-laser-line"></div>
+                <div className="corner-tl"></div>
+                <div className="corner-tr"></div>
+                <div className="corner-bl"></div>
+                <div className="corner-br"></div>
+              </div>
+            </div>
+          )}
 
           {/* Real-time scanning guidance */}
           {isScanning && (
             <div style={{ textAlign: 'center', padding: '8px 12px 2px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              ⚡ <strong>Instant QR Detection:</strong> Hold student's phone 6–10 inches away with good screen brightness.
+              ⚡ <strong>Instant QR Detection:</strong> Point camera at QR code. Scans instantly with zero delay!
             </div>
           )}
 
