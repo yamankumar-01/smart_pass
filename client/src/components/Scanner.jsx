@@ -863,36 +863,11 @@ export default function Scanner({ activeSession, setActiveSession }) {
                 <Camera size={32} />
               </div>
               <h3 style={{ color: 'var(--text-main)', fontSize: '1.1rem', marginBottom: '6px' }}>
-                Camera Scanner is Paused
+                Camera Scanner Standby
               </h3>
-              <p style={{ fontSize: '0.85rem', maxWidth: '320px', marginBottom: '1.25rem' }}>
-                Click <strong>"Start Scan"</strong> below to open camera or upload a QR image file directly.
+              <p style={{ fontSize: '0.88rem', maxWidth: '360px', margin: 0, color: 'var(--text-muted)' }}>
+                Click <strong style={{ color: '#34d399' }}>"▶ Start Camera Scanner"</strong> below to open camera.
               </p>
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => startScanner(cameraFacing)}
-                  disabled={isStartingCamera}
-                  style={{ minWidth: '180px' }}
-                >
-                  <Play size={16} /> {isStartingCamera ? 'Opening Camera...' : 'Start Camera Scanner'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{ minWidth: '160px' }}
-                >
-                  <UploadCloud size={16} /> Upload QR Image
-                </button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  style={{ display: 'none' }}
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                />
-              </div>
             </div>
           )}
 
