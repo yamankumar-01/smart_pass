@@ -1014,15 +1014,19 @@ def smtp_settings_view(request):
     if request.method == 'GET':
         if not setting:
             return Response({
+                'provider': 'resend',
+                'resend_api_key': '',
                 'host': 'smtp.gmail.com',
                 'port': 587,
                 'use_tls': True,
                 'user': '',
-                'from_name': 'Campus Attendance System',
-                'from_email': '',
+                'from_name': 'Aarambh Attendance System',
+                'from_email': 'onboarding@resend.dev',
                 'is_active': False
             })
         return Response({
+            'provider': getattr(setting, 'provider', 'resend'),
+            'resend_api_key': getattr(setting, 'resend_api_key', ''),
             'host': setting.host,
             'port': setting.port,
             'use_tls': setting.use_tls,
@@ -1034,18 +1038,26 @@ def smtp_settings_view(request):
 
     if request.method == 'POST':
         data = request.data
+        provider = data.get('provider', 'resend')
+        resend_key = data.get('resend_api_key', '').strip()
+        
         if not setting:
             setting = SMTPSetting.objects.create(
+                provider=provider,
+                resend_api_key=resend_key,
                 host=data.get('host', 'smtp.gmail.com'),
                 port=int(data.get('port', 587)),
                 use_tls=data.get('use_tls', True),
                 user=data.get('user', '').strip(),
                 password=data.get('password', '').strip(),
-                from_name=data.get('from_name', 'Campus Attendance System'),
-                from_email=data.get('from_email', ''),
+                from_name=data.get('from_name', 'Aarambh Attendance System'),
+                from_email=data.get('from_email', 'onboarding@resend.dev'),
                 is_active=data.get('is_active', True)
             )
         else:
+            setting.provider = provider
+            if 'resend_api_key' in data:
+                setting.resend_api_key = resend_key
             setting.host = data.get('host', setting.host)
             setting.port = int(data.get('port', setting.port))
             setting.use_tls = data.get('use_tls', setting.use_tls)
@@ -1057,7 +1069,7 @@ def smtp_settings_view(request):
             setting.is_active = data.get('is_active', True)
             setting.save()
 
-        return Response({'message': 'SMTP Settings saved and activated successfully!'})
+        return Response({'message': 'Email Gateway Settings saved and activated successfully!'})
 
 @api_view(['POST'])
 @permission_classes([AllowAny])

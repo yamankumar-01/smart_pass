@@ -92,14 +92,18 @@ class EmailLog(models.Model):
         return f"Email to {self.email} ({self.status})"
 
 class SMTPSetting(models.Model):
+    provider = models.CharField(max_length=50, default='resend') # 'resend' or 'smtp'
+    resend_api_key = models.CharField(max_length=255, blank=True, default='')
     host = models.CharField(max_length=255, default='smtp.gmail.com')
     port = models.IntegerField(default=587)
     use_tls = models.BooleanField(default=True)
     user = models.CharField(max_length=255, blank=True, default='')
     password = models.CharField(max_length=255, blank=True, default='')
     from_name = models.CharField(max_length=255, default='Campus Attendance System')
-    from_email = models.CharField(max_length=255, default='noreply@school.edu')
+    from_email = models.CharField(max_length=255, default='onboarding@resend.dev')
     is_active = models.BooleanField(default=False)
 
     def __str__(self):
+        if self.provider == 'resend':
+            return f"Resend API Config - Active: {self.is_active}"
         return f"SMTP Config ({self.host}:{self.port}) - Active: {self.is_active}"
