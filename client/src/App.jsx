@@ -21,15 +21,18 @@ export default function App() {
     return (user === 'adminpass' || user === 'admin') ? 'admin' : 'volunteer';
   });
   
-  // Persist active tab across browser reloads
+  // Persist active tab across browser reloads with role-protection
   const validTabs = ['scanner', 'events', 'students', 'dispatch', 'reports', 'emails', 'settings'];
   const getInitialTab = () => {
+    const savedRole = sessionStorage.getItem('role') || ((sessionStorage.getItem('username') || '').toLowerCase() === 'adminpass' ? 'admin' : 'volunteer');
     const hash = window.location.hash.replace('#', '');
     if (validTabs.includes(hash)) {
+      if (savedRole !== 'admin' && hash !== 'scanner') return 'scanner';
       return hash;
     }
     const saved = sessionStorage.getItem('activeTab');
     if (saved && validTabs.includes(saved)) {
+      if (savedRole !== 'admin' && saved !== 'scanner') return 'scanner';
       return saved;
     }
     return 'scanner';
