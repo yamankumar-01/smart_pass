@@ -3,8 +3,22 @@ import { UserPlus, Upload, Download, Search, Mail, QrCode, Trash2, FileText, Che
 import api from '../api/axios';
 
 export default function StudentManager({ initialEventFilter }) {
-  const [students, setStudents] = useState([]);
-  const [events, setEvents] = useState([]);
+  const [students, setStudents] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('smartpass_students_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [events, setEvents] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('smartpass_events_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(false);
 
   const [search, setSearch] = useState('');
@@ -41,6 +55,9 @@ export default function StudentManager({ initialEventFilter }) {
     try {
       const res = await api.get('/events/');
       setEvents(res.data);
+      try {
+        sessionStorage.setItem('smartpass_events_cache', JSON.stringify(res.data));
+      } catch {}
     } catch (err) {
       console.error('Failed to load events:', err);
     }
@@ -58,9 +75,15 @@ export default function StudentManager({ initialEventFilter }) {
       const res = await api.get(`/students/?${queryParams.toString()}`);
       const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
       setStudents(list);
+      if (!search && !branchFilter && !yearFilter && !eventFilter) {
+        try {
+          sessionStorage.setItem('smartpass_students_cache', JSON.stringify(list));
+        } catch {}
+      }
     } catch (err) {
       console.error('Failed to load students:', err);
-      setStudents([]);
+      // Only reset if no cached students exist
+      setStudents(prev => prev.length > 0 ? prev : []);
     } finally {
       setLoading(false);
     }
@@ -317,11 +340,15 @@ export default function StudentManager({ initialEventFilter }) {
             ) : (
               <span>Import and classify student records by specific Academic Events & Workshops.</span>
             )}
-            {students.length > 0 && (
+            {students.length > 0 ? (
               <span className="badge badge-success" style={{ marginLeft: '10px', fontSize: '0.85rem' }}>
                 {students.length} {currentFilteredEvent ? `in ${currentFilteredEvent.title}` : 'Total Students'}
               </span>
-            )}
+            ) : loading ? (
+              <span className="badge badge-info" style={{ marginLeft: '10px', fontSize: '0.85rem' }}>
+                ⏳ Syncing...
+              </span>
+            ) : null}
           </p>
         </div>
 
@@ -382,7 +409,7 @@ export default function StudentManager({ initialEventFilter }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>🏛️ Branch</label>
             <select className="form-select" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-              <option value="">All Branches ({availableBranches.length})</option>
+              <option value="">All Branches {availableBranches.length > 0 ? `(${availableBranches.length})` : ''}</option>
               {availableBranches.map(b => (
                 <option key={b} value={b}>{b}</option>
               ))}
@@ -393,7 +420,7 @@ export default function StudentManager({ initialEventFilter }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>📅 Academic Year</label>
             <select className="form-select" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
-              <option value="">All Years ({availableYears.length})</option>
+              <option value="">All Years {availableYears.length > 0 ? `(${availableYears.length})` : ''}</option>
               {availableYears.map(y => (
                 <option key={y} value={y}>Year {y}</option>
               ))}
@@ -407,7 +434,7 @@ export default function StudentManager({ initialEventFilter }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th style={{ width: '65px' }}>S.No.</th>
               <th>Student Name</th>
               <th>Email Address</th>
               <th>Branch / Dept</th>
@@ -417,7 +444,28 @@ export default function StudentManager({ initialEventFilter }) {
             </tr>
           </thead>
           <tbody>
-            {students.length === 0 ? (
+            {loading && students.length === 0 ? (
+              <tr>
+                <td colSpan="7" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      border: '3px solid rgba(255,255,255,0.1)',
+                      borderTopColor: 'var(--primary)',
+                      borderRadius: '50%',
+                      animation: 'spin 0.8s linear infinite'
+                    }}></div>
+                    <p style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--text-main)', margin: 0 }}>
+                      ⚡ Loading verified student records from cloud database...
+                    </p>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+                      Your records are safe. Syncing latest data...
+                    </p>
+                  </div>
+                </td>
+              </tr>
+            ) : students.length === 0 ? (
               <tr>
                 <td colSpan="7" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
                   {eventFilter ? (
@@ -439,9 +487,9 @@ export default function StudentManager({ initialEventFilter }) {
                 </td>
               </tr>
             ) : (
-              students.map((student) => (
+              students.map((student, index) => (
                 <tr key={student.id}>
-                  <td>#{student.id}</td>
+                  <td style={{ fontWeight: 600, color: 'var(--text-muted)' }}>{index + 1}</td>
                   <td>
                     <strong style={{ fontSize: '0.95rem' }}>{student.name}</strong>
                   </td>
@@ -744,7 +792,7 @@ export default function StudentManager({ initialEventFilter }) {
                       <tbody>
                         {duplicatesList.map((dup, idx) => (
                           <tr key={`${dup.email}-${idx}`}>
-                            <td>#{dup.row_number}</td>
+                            <td>Row {dup.row_number}</td>
                             <td>
                               <strong>{dup.name}</strong>
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>

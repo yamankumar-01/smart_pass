@@ -801,7 +801,16 @@ class EventViewSet(viewsets.ModelViewSet):
                     'failed_count': 0,
                     'errors': []
                 })
-            return Response({'error': f'No student passes found for "{event_obj.title}". Please upload or enroll students for this event first.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Auto-generate passes if students exist but passes were not generated yet
+            students = Student.objects.all()
+            if students.exists():
+                to_create = [EventPass(event=event_obj, student=st) for st in students]
+                EventPass.objects.bulk_create(to_create)
+                passes = list(event_obj.passes.filter(qr_sent=False).select_related('student', 'event'))
+                total_count = len(to_create)
+            else:
+                return Response({'error': f'No students found in the system for "{event_obj.title}". Please upload students first.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # High-speed asynchronous batch dispatch in background thread
         import threading

@@ -4,26 +4,25 @@ from .utils import generate_qr_code
 
 class StudentSerializer(serializers.ModelSerializer):
     token = serializers.CharField(source='unique_token', read_only=True)
-    qr_code_data = serializers.SerializerMethodField()
     enrolled_events = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
-        fields = ['id', 'unique_token', 'token', 'name', 'email', 'branch', 'year', 'section', 'qr_sent', 'qr_code_image', 'qr_code_data', 'enrolled_events', 'created_at']
+        fields = ['id', 'unique_token', 'token', 'name', 'email', 'branch', 'year', 'section', 'qr_sent', 'qr_code_image', 'enrolled_events', 'created_at']
         read_only_fields = ['id', 'unique_token', 'qr_sent', 'created_at']
-
-    def get_qr_code_data(self, obj):
-        # Quick data URI generation
-        token_str = str(obj.unique_token)
-        return f"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='200' height='200' fill='white'/><text x='10' y='100' font-family='monospace' font-size='11' fill='black'>{token_str}</text></svg>"
 
     def get_enrolled_events(self, obj):
         if hasattr(obj, 'event_passes'):
             return [{'id': ep.event_id, 'title': ep.event.title} for ep in obj.event_passes.all() if ep.event]
         return []
 
+class PassStudentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Student
+        fields = ['id', 'name', 'email', 'branch', 'year', 'section']
+
 class EventPassSerializer(serializers.ModelSerializer):
-    student = StudentSerializer(read_only=True)
+    student = PassStudentSerializer(read_only=True)
     token = serializers.CharField(source='event_token', read_only=True)
     event_title = serializers.CharField(source='event.title', read_only=True)
 

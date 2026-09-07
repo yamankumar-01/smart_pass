@@ -58,9 +58,11 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
   }, [selectedEventId]);
 
   const selectedEvent = events.find(e => e.id === parseInt(selectedEventId));
-  const totalPasses = passes.length;
-  const qrSentCount = passes.filter(p => p.qr_sent).length;
-  const pendingCount = totalPasses - qrSentCount;
+  const totalPasses = passes.length > 0 ? passes.length : (selectedEvent?.total_enrolled || 0);
+  const qrSentCount = passes.length > 0 
+    ? passes.filter(p => p.qr_sent).length 
+    : (selectedEvent?.passes_sent_count || 0);
+  const pendingCount = Math.max(0, totalPasses - qrSentCount);
 
   // Trigger Event Pass Generation
   const handleGeneratePasses = async () => {
@@ -169,7 +171,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
               <Users size={16} /> Manage Event Students
             </button>
           )}
-          <button className="btn btn-secondary" onClick={() => loadEventPasses(selectedEventId)}>
+          <button className="btn btn-secondary" onClick={() => { loadEvents(); if (selectedEventId) loadEventPasses(selectedEventId); }}>
             <RefreshCw size={16} /> Refresh Passes
           </button>
         </div>
@@ -270,7 +272,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
           <button
             className="btn btn-primary"
             onClick={handleSendEmails}
-            disabled={loading || !selectedEventId || passes.length === 0}
+            disabled={loading || !selectedEventId || totalPasses === 0}
             style={{ padding: '12px 24px' }}
           >
             <Send size={18} /> 🚀 Dispatch {selectedEvent?.title ? `"${selectedEvent.title}"` : 'Event'} Passes via Email
@@ -329,7 +331,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
             <button
               className="btn btn-primary"
               onClick={handleSendEmails}
-              disabled={loading || !selectedEventId || passes.length === 0}
+              disabled={loading || !selectedEventId || totalPasses === 0}
               style={{ padding: '8px 16px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               <Send size={15} /> 🚀 Dispatch Event Passes

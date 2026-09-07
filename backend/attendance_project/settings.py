@@ -96,9 +96,15 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 if DATABASE_URL:
     try:
         import dj_database_url
-        DATABASES = {
-            'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)
-        }
+        db_config = dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=0,  # Never reuse stale remote sockets
+            conn_health_checks=True
+        )
+        if 'OPTIONS' not in db_config:
+            db_config['OPTIONS'] = {}
+        db_config['OPTIONS']['connect_timeout'] = 5
+        DATABASES = {'default': db_config}
     except ImportError:
         DATABASES = {
             'default': {

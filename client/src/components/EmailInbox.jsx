@@ -91,7 +91,7 @@ export default function EmailInbox() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Log ID</th>
+              <th style={{ width: '65px' }}>S.No.</th>
               <th>Recipient Name</th>
               <th>Destination Email</th>
               <th>Subject</th>
@@ -109,9 +109,9 @@ export default function EmailInbox() {
                 </td>
               </tr>
             ) : (
-              emails.map((log) => (
+              emails.map((log, index) => (
                 <tr key={log.id}>
-                  <td>#{log.id}</td>
+                  <td style={{ fontWeight: 600, color: 'var(--text-muted)' }}>{index + 1}</td>
                   <td><strong>{log.student_name || 'Student'}</strong></td>
                   <td style={{ color: 'var(--text-muted)' }}>{log.email}</td>
                   <td>{log.subject}</td>
