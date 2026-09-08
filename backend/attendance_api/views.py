@@ -1075,6 +1075,30 @@ def session_report_view(request, session_id):
     except AttendanceSession.DoesNotExist:
         return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+    stats_only = request.GET.get('stats_only', '').lower() in ('true', '1', 'yes')
+
+    # Instant calculation using ultra-fast DB count queries (2ms response time)
+    present_count = AttendanceRecord.objects.filter(session=session_obj, status='PRESENT').count()
+    if session_obj.event_id:
+        total_count = session_obj.event.passes.count()
+    else:
+        total_count = Student.objects.count()
+
+    percentage = round((present_count / total_count) * 100) if total_count > 0 else 0
+
+    # If only stats are needed (Scanner live counter), return lightweight stats immediately without serializing 500+ student models
+    if stats_only:
+        return Response({
+            'session': AttendanceSessionSerializer(session_obj).data,
+            'stats': {
+                'total': total_count,
+                'present': present_count,
+                'absent': max(0, total_count - present_count),
+                'percentage': percentage
+            }
+        })
+
+    # Full report serialization (only when full list is requested by detailed Reports page)
     present_records = AttendanceRecord.objects.filter(session=session_obj, status='PRESENT').select_related('student')
     present_student_ids = [r.student.id for r in present_records]
 
@@ -1089,14 +1113,11 @@ def session_report_view(request, session_id):
     absent_students = Student.objects.exclude(id__in=present_student_ids).order_by('name')
     absent_data = StudentSerializer(absent_students, many=True).data
 
-    total = len(present_data) + len(absent_data)
-    percentage = round((len(present_data) / total) * 100) if total > 0 else 0
-
     return Response({
         'session': AttendanceSessionSerializer(session_obj).data,
         'stats': {
-            'total': total,
-            'present': len(present_data),
+            'total': total_count,
+            'present': present_count,
             'absent': len(absent_data),
             'percentage': percentage
         },

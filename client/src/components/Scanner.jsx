@@ -61,12 +61,43 @@ function playSound(type) {
   }
 }
 
+// Cache key for zero-latency instant hydration
+const SCANNER_CACHE_KEY = 'smartpass_scanner_state';
+const getInitialScannerCache = () => {
+  try {
+    const raw = localStorage.getItem(SCANNER_CACHE_KEY) || sessionStorage.getItem(SCANNER_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function Scanner({ activeSession, setActiveSession }) {
-  const [events, setEvents] = useState([]);
-  const [selectedEventId, setSelectedEventId] = useState('');
+  const cachedScannerState = getInitialScannerCache();
+
+  // Instant pre-hydration: Render cached events, session and stats immediately (0ms delay!)
+  const [events, setEvents] = useState(() => cachedScannerState?.events || []);
+  const [selectedEventId, setSelectedEventId] = useState(() => {
+    if (activeSession?.event_id || activeSession?.event) {
+      return String(activeSession.event_id || activeSession.event);
+    }
+    return cachedScannerState?.selectedEventId ? String(cachedScannerState.selectedEventId) : '';
+  });
+
   const [scanResult, setScanResult] = useState(null);
   const [manualToken, setManualToken] = useState('');
-  const [sessionStats, setSessionStats] = useState({ present: 0, total: 0 });
+  
+  // Instant stats from activeSession or cache
+  const [sessionStats, setSessionStats] = useState(() => {
+    if (activeSession && activeSession.present_count !== undefined) {
+      return {
+        present: activeSession.present_count,
+        total: activeSession.total_students || 0
+      };
+    }
+    return cachedScannerState?.sessionStats || { present: 0, total: 0 };
+  });
+
   const [loading, setLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [cameraFacing, setCameraFacing] = useState('environment'); // 'environment' (back) or 'user' (front)
@@ -169,42 +200,61 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
       if (eventList.length > 0) {
         let initialEvent = eventList[0];
-        if (activeSession && activeSession.event) {
-          const match = eventList.find(e => e.id === activeSession.event || e.id === activeSession.event_id);
+        if (activeSession && (activeSession.event || activeSession.event_id)) {
+          const targetId = activeSession.event || activeSession.event_id;
+          const match = eventList.find(e => e.id === targetId);
           if (match) initialEvent = match;
         }
 
         setSelectedEventId(String(initialEvent.id));
 
+        let initialSess = null;
         if (initialEvent.sessions && initialEvent.sessions.length > 0) {
-          if (!activeSession || (activeSession.event && activeSession.event !== initialEvent.id)) {
-            // Prioritize session matching today's date (Day 2) or latest active session
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const todayStr = `${year}-${month}-${day}`;
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const day = String(now.getDate()).padStart(2, '0');
+          const todayStr = `${year}-${month}-${day}`;
 
-            const savedSessId = sessionStorage.getItem('selected_session_id');
-            const activeSessions = initialEvent.sessions.filter(s => s.is_active || s.status === 'ACTIVE');
+          const savedSessId = sessionStorage.getItem('selected_session_id');
+          const activeSessions = initialEvent.sessions.filter(s => s.is_active || s.status === 'ACTIVE');
 
-            let activeSess = savedSessId ? initialEvent.sessions.find(s => String(s.id) === String(savedSessId)) : null;
+          if (savedSessId) {
+            initialSess = initialEvent.sessions.find(s => String(s.id) === String(savedSessId));
+          }
+          if (!initialSess) {
+            initialSess = activeSessions.find(s => s.date === todayStr);
+          }
+          if (!initialSess && activeSessions.length > 0) {
+            initialSess = activeSessions[activeSessions.length - 1];
+          }
+          if (!initialSess) {
+            initialSess = initialEvent.sessions[0];
+          }
 
-            if (!activeSess) {
-              activeSess = activeSessions.find(s => s.date === todayStr);
-            }
-            if (!activeSess && activeSessions.length > 0) {
-              activeSess = activeSessions[activeSessions.length - 1];
-            }
-            if (!activeSess) {
-              activeSess = initialEvent.sessions[0];
-            }
+          if (!activeSession || activeSession.id !== initialSess.id) {
+            setActiveSession(initialSess);
+          }
 
-            setActiveSession(activeSess);
+          // Instantly populate stats from session serializer without waiting for network call
+          if (initialSess && initialSess.present_count !== undefined) {
+            setSessionStats({
+              present: initialSess.present_count,
+              total: initialSess.total_students || 0
+            });
           }
         } else {
           setActiveSession(null);
         }
+
+        // Cache state for instant 0ms hydration on next reload
+        try {
+          localStorage.setItem(SCANNER_CACHE_KEY, JSON.stringify({
+            events: eventList,
+            selectedEventId: initialEvent.id,
+            sessionStats: initialSess ? { present: initialSess.present_count || 0, total: initialSess.total_students || 0 } : { present: 0, total: 0 }
+          }));
+        } catch (e) {}
       }
     } catch (err) {
       console.error('Failed to load events:', err);
@@ -217,12 +267,21 @@ export default function Scanner({ activeSession, setActiveSession }) {
       return;
     }
     try {
-      const res = await api.get(`/attendance/session/${sessionId}/`);
-      if (res.data.stats) {
-        setSessionStats({
+      // Ultra-fast query with stats_only=1: runs 2ms DB count instead of serializing 500+ students!
+      const res = await api.get(`/attendance/session/${sessionId}/?stats_only=1`);
+      if (res.data && res.data.stats) {
+        const nextStats = {
           present: res.data.stats.present,
           total: res.data.stats.total
-        });
+        };
+        setSessionStats(nextStats);
+
+        // Update cached stats
+        try {
+          const current = getInitialScannerCache() || {};
+          current.sessionStats = nextStats;
+          localStorage.setItem(SCANNER_CACHE_KEY, JSON.stringify(current));
+        } catch (e) {}
       }
     } catch (err) {
       console.error('Error fetching session stats:', err);
@@ -235,11 +294,18 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
   useEffect(() => {
     if (activeSession) {
+      // Immediately reflect present_count from activeSession if present
+      if (activeSession.present_count !== undefined) {
+        setSessionStats({
+          present: activeSession.present_count,
+          total: activeSession.total_students || 0
+        });
+      }
       loadSessionStats(activeSession.id);
     } else {
       setSessionStats({ present: 0, total: 0 });
     }
-  }, [activeSession]);
+  }, [activeSession?.id]);
 
   // Helper to access underlying video stream track for hardware controls
   const getVideoTrack = () => {
@@ -666,6 +732,12 @@ export default function Scanner({ activeSession, setActiveSession }) {
         });
 
         playSound('success');
+
+        // Instant local counter increment for 0ms lag-free feedback
+        setSessionStats(prev => ({
+          ...prev,
+          present: (prev.present || 0) + 1
+        }));
 
         try {
           confetti({

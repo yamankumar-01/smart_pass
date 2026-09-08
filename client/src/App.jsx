@@ -39,7 +39,28 @@ export default function App() {
   };
 
   const [activeTab, setActiveTabState] = useState(getInitialTab);
-  const [activeSession, setActiveSession] = useState(null);
+  const [activeSession, setActiveSessionState] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('smartpass_active_session') || localStorage.getItem('smartpass_active_session');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const setActiveSession = (sess) => {
+    setActiveSessionState(sess);
+    try {
+      if (sess) {
+        sessionStorage.setItem('smartpass_active_session', JSON.stringify(sess));
+        localStorage.setItem('smartpass_active_session', JSON.stringify(sess));
+      } else {
+        sessionStorage.removeItem('smartpass_active_session');
+        localStorage.removeItem('smartpass_active_session');
+      }
+    } catch (e) {}
+  };
+
   const [selectedEventForReport, setSelectedEventForReport] = useState(null);
   const [selectedEventForDispatch, setSelectedEventForDispatch] = useState(null);
   const [selectedEventForStudents, setSelectedEventForStudents] = useState(null);
