@@ -261,6 +261,93 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
     }
   };
 
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
+  const [downloadingCsv, setDownloadingCsv] = useState(false);
+  const [downloadingSessionCsv, setDownloadingSessionCsv] = useState(false);
+
+  const handleDownloadExcel = async () => {
+    if (!selectedEventId) return;
+    setDownloadingExcel(true);
+    try {
+      const res = await api.get(`/events/${selectedEventId}/export-excel/`, {
+        responseType: 'blob'
+      });
+      const blob = new Blob([res.data], { type: 'application/vnd.ms-excel;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const targetEvent = events.find(e => String(e.id) === String(selectedEventId));
+      const evTitle = targetEvent?.title || 'Event';
+      link.download = `${evTitle.replace(/\s+/g, '_')}_Attendance.xls`;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      }, 100);
+    } catch (err) {
+      console.error('Failed to download excel:', err);
+      alert('Failed to download Excel file. Please try again.');
+    } finally {
+      setDownloadingExcel(false);
+    }
+  };
+
+  const handleDownloadCsv = async () => {
+    if (!selectedEventId) return;
+    setDownloadingCsv(true);
+    try {
+      const res = await api.get(`/events/${selectedEventId}/export-csv/`, {
+        responseType: 'blob'
+      });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const targetEvent = events.find(e => String(e.id) === String(selectedEventId));
+      const evTitle = targetEvent?.title || 'Event';
+      link.download = `${evTitle.replace(/\s+/g, '_')}_Attendance.csv`;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      }, 100);
+    } catch (err) {
+      console.error('Failed to download csv:', err);
+      alert('Failed to download CSV file. Please try again.');
+    } finally {
+      setDownloadingCsv(false);
+    }
+  };
+
+  const handleDownloadSessionCsv = async () => {
+    if (!selectedSessionId) return;
+    setDownloadingSessionCsv(true);
+    try {
+      const res = await api.get(`/attendance/export/${selectedSessionId}/`, {
+        responseType: 'blob'
+      });
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const sTitle = reportData?.session?.title || 'Session';
+      link.download = `Attendance_${sTitle.replace(/\s+/g, '_')}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      }, 100);
+    } catch (err) {
+      console.error('Failed to download session csv:', err);
+      alert('Failed to download session CSV.');
+    } finally {
+      setDownloadingSessionCsv(false);
+    }
+  };
+
   const filteredMatrix = matrixData ? matrixData.matrix.filter(row => {
     const s = row.student;
     return (
@@ -353,22 +440,32 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                   >
                     <RefreshCw size={16} className={isMatrixSyncing ? 'spin' : ''} /> {isMatrixSyncing ? 'Syncing...' : 'Refresh Matrix'}
                   </button>
-                  <a
-                    href={`/api/events/${selectedEventId}/export-excel/`}
-                    download
+                  <button
+                    type="button"
+                    onClick={handleDownloadExcel}
+                    disabled={downloadingExcel}
                     className="btn btn-success"
                     style={{ background: '#10b981', color: 'white', flex: '1 1 auto', justifyContent: 'center' }}
                   >
-                    <FileSpreadsheet size={16} /> Download Excel (.xls)
-                  </a>
-                  <a
-                    href={`/api/events/${selectedEventId}/export-csv/`}
-                    download
+                    {downloadingExcel ? (
+                      <><RefreshCw size={16} className="spin" /> Generating Excel...</>
+                    ) : (
+                      <><FileSpreadsheet size={16} /> Download Excel (.xls)</>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadCsv}
+                    disabled={downloadingCsv}
                     className="btn btn-secondary"
                     style={{ flex: '1 1 auto', justifyContent: 'center' }}
                   >
-                    <Download size={16} /> Export CSV
-                  </a>
+                    {downloadingCsv ? (
+                      <><RefreshCw size={16} className="spin" /> Exporting CSV...</>
+                    ) : (
+                      <><Download size={16} /> Export CSV</>
+                    )}
+                  </button>
                 </div>
               )}
             </div>
@@ -561,13 +658,18 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                 )}
 
                 {selectedSessionId && (
-                  <a
-                    href={`/api/attendance/export/${selectedSessionId}`}
-                    download
+                  <button
+                    type="button"
+                    onClick={handleDownloadSessionCsv}
+                    disabled={downloadingSessionCsv}
                     className="btn btn-primary"
                   >
-                    <Download size={16} /> Export Session CSV
-                  </a>
+                    {downloadingSessionCsv ? (
+                      <><RefreshCw size={14} className="spin" /> Exporting...</>
+                    ) : (
+                      <><Download size={14} /> Export Session CSV</>
+                    )}
+                  </button>
                 )}
               </div>
             </div>

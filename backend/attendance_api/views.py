@@ -609,8 +609,8 @@ class EventViewSet(viewsets.ModelViewSet):
         ).order_by('-id')
 
     def get_permissions(self):
-        # Volunteers can view events; modifications are strictly admin
-        if self.action in ['list', 'retrieve', 'matrix_report']:
+        # Volunteers and Admins can view events and export reports; modifications are strictly admin
+        if self.action in ['list', 'retrieve', 'matrix_report', 'export_excel', 'export_csv']:
             return [IsVolunteerOrAdmin()]
         return [IsAdminUserRole()]
 
