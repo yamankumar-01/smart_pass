@@ -788,6 +788,16 @@ body {
   animation: liveBlink 1.5s infinite;
 }
 
+.live-dot.warning {
+  background-color: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+.live-dot.info {
+  background-color: #6366f1;
+  box-shadow: 0 0 8px #6366f1;
+}
+
 @keyframes liveBlink {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.85); }

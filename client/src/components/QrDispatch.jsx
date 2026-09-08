@@ -50,6 +50,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
 
   const [loading, setLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAutoPolling, setIsAutoPolling] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState(null);
   const [progress, setProgress] = useState(0);
   const [tableSearch, setTableSearch] = useState('');
@@ -79,25 +80,27 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
     }
   };
 
-  const loadEventPasses = async (eventId, showBlockingSpinner = false) => {
-    if (!eventId) return;
+  const loadEventPasses = async (eventId, showBlockingSpinner = false, silent = false) => {
+    if (!eventId) return null;
 
-    let hasCached = false;
-    try {
-      const cached = localStorage.getItem(`smartpass_event_passes_${eventId}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed && parsed.length > 0) {
-          hasCached = true;
-          setPasses(parsed);
+    if (!silent) {
+      let hasCached = false;
+      try {
+        const cached = localStorage.getItem(`smartpass_event_passes_${eventId}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.length > 0) {
+            hasCached = true;
+            setPasses(parsed);
+          }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
 
-    if (!hasCached && showBlockingSpinner) {
-      setLoading(true);
-    } else {
-      setIsSyncing(true);
+      if (!hasCached && showBlockingSpinner) {
+        setLoading(true);
+      } else {
+        setIsSyncing(true);
+      }
     }
 
     try {
@@ -107,11 +110,17 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
       try {
         localStorage.setItem(`smartpass_event_passes_${eventId}`, JSON.stringify(list));
       } catch (e) {}
+      return list;
     } catch (err) {
-      console.error('Failed to load event passes:', err);
+      if (!silent) {
+        console.error('Failed to load event passes:', err);
+      }
+      return null;
     } finally {
-      setLoading(false);
-      setIsSyncing(false);
+      if (!silent) {
+        setLoading(false);
+        setIsSyncing(false);
+      }
     }
   };
 
@@ -154,6 +163,35 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
     : (selectedEvent?.passes_sent_count || 0);
   const pendingCount = Math.max(0, totalPasses - qrSentCount);
 
+  // Intelligent Live Auto-Polling: automatically syncs pending passes in real time
+  // without user needing to manually hit "Refresh Passes". Auto-pauses when pending reaches 0.
+  useEffect(() => {
+    if (!selectedEventId || pendingCount === 0) {
+      setIsAutoPolling(false);
+      return;
+    }
+
+    setIsAutoPolling(true);
+    const pollInterval = setInterval(async () => {
+      const updatedList = await loadEventPasses(selectedEventId, false, true);
+      if (updatedList) {
+        const remaining = updatedList.filter(p => !p.qr_sent).length;
+        if (remaining === 0) {
+          setIsAutoPolling(false);
+          setDispatchStatus({
+            type: 'success',
+            message: `🎉 All ${updatedList.length} passes for "${selectedEvent?.title || 'this event'}" have been successfully delivered!`
+          });
+          loadEvents(); // sync header & event stats
+        }
+      }
+    }, 2500);
+
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [selectedEventId, pendingCount, selectedEvent?.title]);
+
   // Trigger Event Pass Generation
   const handleGeneratePasses = async () => {
     if (!selectedEventId) return;
@@ -184,7 +222,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
     setProgress(35);
     setDispatchStatus({
       type: 'info',
-      message: `⚡ Fast Dispatching ${selectedEvent?.title || 'Event'} pass emails in high-speed batch mode...`
+      message: `⚡ Fast Dispatching ${selectedEvent?.title || 'Event'} pass emails in background...`
     });
 
     const timer = setInterval(() => {
@@ -196,11 +234,12 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
       clearInterval(timer);
       setProgress(100);
 
+      const successMsg = res.data.message || `Pass dispatch started in background!`;
       setDispatchStatus({
-        type: 'success',
-        message: res.data.message || `Successfully dispatched event passes via email!`
+        type: 'info',
+        message: `${successMsg} ⚡ Live auto-updating delivery status below...`
       });
-      loadEventPasses(selectedEventId);
+      await loadEventPasses(selectedEventId, false, false);
       loadEvents();
     } catch (err) {
       clearInterval(timer);
@@ -213,7 +252,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
       setLoading(false);
       setTimeout(() => {
         setProgress(0);
-      }, 3500);
+      }, 2500);
     }
   };
 
@@ -252,7 +291,24 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
           <p>Generate isolated QR passes for each event. Each pass is valid across all days of that event only.</p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {isAutoPolling && (
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px', 
+              padding: '6px 12px', 
+              borderRadius: '20px', 
+              background: 'rgba(245, 158, 11, 0.12)', 
+              border: '1px solid rgba(245, 158, 11, 0.3)', 
+              fontSize: '0.8rem', 
+              fontWeight: 600, 
+              color: '#d97706' 
+            }}>
+              <span className="live-dot warning" />
+              <span>Auto-Updating ({pendingCount} pending)</span>
+            </div>
+          )}
           {selectedEvent && (
             <button
               className="btn btn-secondary"
@@ -265,7 +321,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
             className="btn btn-secondary" 
             onClick={() => { 
               loadEvents(true); 
-              if (selectedEventId) loadEventPasses(selectedEventId, false); 
+              if (selectedEventId) loadEventPasses(selectedEventId, false, false); 
             }}
             disabled={isSyncing}
           >
@@ -336,6 +392,17 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
           <div className="stat-info">
             <h4>Pending Delivery</h4>
             <div className="value" style={{ color: 'var(--warning)' }}>{eventsLoading && events.length === 0 ? '...' : pendingCount}</div>
+            {pendingCount > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', fontSize: '0.75rem', fontWeight: 600, color: '#d97706' }}>
+                <span className="live-dot warning" />
+                <span>Live auto-updating...</span>
+              </div>
+            ) : totalPasses > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--success)' }}>
+                <CheckCircle2 size={13} />
+                <span>All delivered</span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -401,8 +468,13 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
       <div className="table-container card" style={{ padding: 0 }}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h4 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.05rem' }}>
-              {selectedEvent ? `Passes for: ${selectedEvent.title}` : 'Event Passes'}
+            <h4 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>{selectedEvent ? `Passes for: ${selectedEvent.title}` : 'Event Passes'}</span>
+              {isAutoPolling && (
+                <span className="badge badge-warning" style={{ fontSize: '0.7rem', padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span className="live-dot warning" style={{ width: '6px', height: '6px' }} /> LIVE
+                </span>
+              )}
             </h4>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               {passes.length} Student Passes Registered ({passes.filter(p => p.qr_sent).length} Sent, {passes.filter(p => !p.qr_sent).length} Pending)
