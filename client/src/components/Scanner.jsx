@@ -4,7 +4,27 @@ import { Camera, CameraOff, Play, Square, RefreshCw, UploadCloud, CheckCircle2, 
 import confetti from 'canvas-confetti';
 import api from '../api/axios';
 
+function triggerVibration(type) {
+  try {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      if (type === 'success') {
+        // Crisp, solid double pulse for attendance marked
+        navigator.vibrate([120, 60, 120]);
+      } else if (type === 'duplicate') {
+        // Two long distinct warning buzzes for already marked
+        navigator.vibrate([250, 100, 250]);
+      } else {
+        // Short triple buzz for invalid/error
+        navigator.vibrate([100, 50, 100, 50, 100]);
+      }
+    }
+  } catch (e) {
+    console.warn('Vibration feedback not supported or blocked:', e);
+  }
+}
+
 function playSound(type) {
+  triggerVibration(type);
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
@@ -1166,7 +1186,10 @@ export default function Scanner({ activeSession, setActiveSession }) {
               <button
                 type="button"
                 className="btn btn-success"
-                onClick={() => startScanner(cameraFacing)}
+                onClick={() => {
+                  if (scanResult) setScanResult(null);
+                  startScanner(cameraFacing);
+                }}
                 disabled={isStartingCamera}
                 style={{
                   padding: '12px 24px',
@@ -1174,11 +1197,19 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   fontWeight: 700,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px'
+                  gap: '8px',
+                  background: scanResult ? 'linear-gradient(135deg, #10b981, #059669)' : undefined,
+                  boxShadow: scanResult ? '0 4px 14px rgba(16, 185, 129, 0.4)' : undefined
                 }}
               >
                 <Play size={18} />
-                <span>{isStartingCamera ? 'Opening Camera...' : '▶ Start Camera Scanner'}</span>
+                <span>
+                  {isStartingCamera
+                    ? 'Opening Camera...'
+                    : scanResult
+                      ? '📸 Scan Next Pass (Camera On)'
+                      : '▶ Start Camera Scanner'}
+                </span>
               </button>
               <button
                 type="button"
@@ -1241,34 +1272,6 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   )}
                 </div>
               </div>
-
-              {/* Prominent "Scan Next Student" button when camera is stopped */}
-              {!isScanning && !loading && (
-                <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => {
-                      setScanResult(null);
-                      startScanner(cameraFacing);
-                    }}
-                    style={{
-                      padding: '12px 24px',
-                      fontSize: '1rem',
-                      fontWeight: 700,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      background: 'linear-gradient(135deg, #10b981, #059669)',
-                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-                      borderRadius: '10px'
-                    }}
-                  >
-                    <Play size={18} />
-                    <span>📸 Scan Next Pass (Camera On)</span>
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         )}
