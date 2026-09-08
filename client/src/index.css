@@ -49,6 +49,8 @@
   --code-bg: #e2e8f0;
   --code-text: #4338ca;
   --nav-btn-hover-bg: rgba(0, 0, 0, 0.05);
+  --scanner-bg: #f8fafc;
+  --scanner-controls-bg: #f1f5f9;
 }
 
 /* ========================================================== */
@@ -96,6 +98,8 @@
   --code-bg: rgba(0, 0, 0, 0.4);
   --code-text: #a5b4fc;
   --nav-btn-hover-bg: rgba(255, 255, 255, 0.06);
+  --scanner-bg: #020617;
+  --scanner-controls-bg: rgba(15, 23, 42, 0.6);
 }
 
 * {
@@ -474,25 +478,61 @@ body {
   position: relative;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background-color: #020617;
-  border: 2px solid var(--border);
+  background-color: var(--scanner-bg);
+  border: 1px solid var(--border);
   min-height: 320px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-#reader {
+.scanner-container.scanner-standby {
+  background-color: var(--scanner-bg);
+  border: 1.5px dashed var(--border-light);
+}
+
+.scanner-container.scanner-active {
+  background-color: #000000;
+  border: 1px solid var(--border);
+}
+
+[data-theme="dark"] .scanner-container.scanner-standby {
+  background-color: #020617;
+  border: 2px solid var(--border);
+}
+
+[data-theme="dark"] .scanner-container.scanner-active {
+  background-color: #000000;
+  border: 2px solid var(--border);
+}
+
+#qr-reader, #reader {
   width: 100% !important;
   border: none !important;
+  background: #000000;
 }
 
-#reader video {
+#qr-reader video, #reader video {
   width: 100% !important;
   height: 100% !important;
   object-fit: cover;
   border-radius: var(--radius-md);
+}
+
+.scanner-controls-bar {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  background-color: var(--scanner-controls-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 /* Scan Overlay & Feedback Banners */

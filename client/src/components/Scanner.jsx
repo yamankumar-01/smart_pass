@@ -987,7 +987,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
             <span>Live Camera QR Scanner</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--border)', userSelect: 'none' }} title="Automatically turn off camera as soon as a pass is scanned">
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)', cursor: 'pointer', background: 'var(--bg-card-hover)', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--border)', userSelect: 'none' }} title="Automatically turn off camera as soon as a pass is scanned">
               <input
                 type="checkbox"
                 checked={autoStopOnScan}
@@ -1014,7 +1014,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
         </div>
 
         {/* Viewfinder Area */}
-        <div className="scanner-container" style={{ padding: '0.5rem 0', position: 'relative', minHeight: '320px' }}>
+        <div className={`scanner-container ${isScanning ? 'scanner-active' : 'scanner-standby'}`} style={{ padding: '0.5rem 0', position: 'relative', minHeight: '320px' }}>
           <div
             id="qr-reader"
             style={{
@@ -1063,39 +1063,40 @@ export default function Scanner({ activeSession, setActiveSession }) {
             >
               <div
                 style={{
-                  width: '64px',
-                  height: '64px',
+                  width: '68px',
+                  height: '68px',
                   borderRadius: '50%',
-                  background: 'rgba(99, 102, 241, 0.1)',
+                  background: 'var(--primary-glow)',
+                  border: '1px solid rgba(99, 102, 241, 0.25)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginBottom: '1rem',
-                  color: 'var(--primary)'
+                  color: 'var(--primary)',
+                  boxShadow: '0 4px 14px var(--primary-glow)'
                 }}
               >
-                <Camera size={32} />
+                <Camera size={34} />
               </div>
-              <h3 style={{ color: 'var(--text-main)', fontSize: '1.1rem', marginBottom: '6px' }}>
+              <h3 style={{ color: 'var(--text-main)', fontSize: '1.2rem', fontWeight: 700, marginBottom: '6px' }}>
                 Camera Scanner Standby
               </h3>
               <p style={{ fontSize: '0.88rem', maxWidth: '360px', margin: 0, color: 'var(--text-muted)' }}>
-                Click <strong style={{ color: '#34d399' }}>"▶ Start Camera Scanner"</strong> below to open camera.
+                Click <strong style={{ color: 'var(--success)' }}>"▶ Start Camera Scanner"</strong> below to open camera.
               </p>
             </div>
           )}
 
-          {/* Error Message if permission denied */}
           {/* Error Message if permission denied */}
           {cameraError && (
             <div
               style={{
                 margin: '1rem',
                 padding: '14px 16px',
-                background: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
+                background: 'var(--danger-bg)',
+                border: '1px solid var(--danger-border)',
                 borderRadius: '10px',
-                color: '#fca5a5',
+                color: 'var(--text-main)',
                 fontSize: '0.88rem',
                 display: 'flex',
                 flexDirection: 'column',
@@ -1104,10 +1105,10 @@ export default function Scanner({ activeSession, setActiveSession }) {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertTriangle size={18} style={{ flexShrink: 0, color: '#f87171' }} />
-                <span style={{ fontWeight: 700, color: '#f87171', fontSize: '0.92rem' }}>Camera Access Required</span>
+                <AlertTriangle size={18} style={{ flexShrink: 0, color: 'var(--danger)' }} />
+                <span style={{ fontWeight: 700, color: 'var(--danger)', fontSize: '0.92rem' }}>Camera Access Required</span>
               </div>
-              <div style={{ fontSize: '0.85rem', color: '#fecaca', lineHeight: '1.45' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
                 {cameraError}
               </div>
               <div style={{ marginTop: '4px', display: 'flex', gap: '8px' }}>
@@ -1130,21 +1131,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
         </div>
 
         {/* SCANNER CONTROLS BAR */}
-        <div
-          className="scanner-controls-bar"
-          style={{
-            marginTop: '1rem',
-            padding: '0.85rem',
-            background: 'rgba(15, 23, 42, 0.6)',
-            borderRadius: '10px',
-            border: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px',
-            flexWrap: 'wrap'
-          }}
-        >
+        <div className="scanner-controls-bar">
           {isScanning ? (
             <>
               <button
@@ -1210,7 +1197,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px',
-                    background: 'rgba(255, 255, 255, 0.08)',
+                    background: 'var(--bg-card)',
                     padding: '4px 8px',
                     borderRadius: '8px',
                     border: '1px solid var(--border)'
@@ -1316,18 +1303,18 @@ export default function Scanner({ activeSession, setActiveSession }) {
             <div className={`scan-feedback-banner ${scanResult.type}`} style={{ margin: 0, flexDirection: 'column', alignItems: 'stretch' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
                 {scanResult.type === 'loading' && <RefreshCw size={28} className="spin" color="var(--primary)" style={{ shrink: 0 }} />}
-                {scanResult.type === 'success' && <CheckCircle2 size={28} color="#34d399" style={{ shrink: 0 }} />}
-                {scanResult.type === 'duplicate' && <AlertTriangle size={28} color="#f87171" style={{ shrink: 0 }} />}
-                {scanResult.type === 'error' && <XCircle size={28} color="#f87171" style={{ shrink: 0 }} />}
+                {scanResult.type === 'success' && <CheckCircle2 size={28} color="var(--success)" style={{ shrink: 0 }} />}
+                {scanResult.type === 'duplicate' && <AlertTriangle size={28} color="var(--danger)" style={{ shrink: 0 }} />}
+                {scanResult.type === 'error' && <XCircle size={28} color="var(--danger)" style={{ shrink: 0 }} />}
 
                 <div style={{ flex: 1 }}>
-                  <h4 style={{ color: scanResult.type === 'success' ? '#34d399' : (scanResult.type === 'loading' ? 'var(--primary)' : '#f87171'), fontSize: '1.15rem', margin: '0 0 4px', fontWeight: 800 }}>
+                  <h4 style={{ color: scanResult.type === 'success' ? 'var(--success)' : (scanResult.type === 'loading' ? 'var(--primary)' : 'var(--danger)'), fontSize: '1.15rem', margin: '0 0 4px', fontWeight: 800 }}>
                     {scanResult.status_label}
                   </h4>
                   <p style={{ margin: 0, fontSize: '0.92rem', color: 'var(--text-main)' }}>{scanResult.message}</p>
                   
                   {scanResult.student && (
-                    <div style={{ marginTop: '10px', padding: '10px 14px', background: 'rgba(0, 0, 0, 0.25)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                    <div style={{ marginTop: '10px', padding: '10px 14px', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border)' }}>
                       <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         👤 {scanResult.student.name}
                       </div>
