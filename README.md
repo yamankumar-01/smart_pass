@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# smart_pass
-=======
 # SmartPass QR-Based Attendance System
 
 A full-stack, real-time QR Attendance System built with **Django 5.0 + Django REST Framework (DRF)** on the backend and **React + Vite + Axios** on the frontend with **JWT Authentication**.
@@ -89,13 +86,14 @@ python manage.py makemigrations
 python manage.py migrate
 ```
 
-Create Admin Superuser for JWT Authentication:
+Create an Admin Superuser:
 
 ```bash
-python manage.py shell -c "from django.contrib.auth.models import User; User.objects.create_superuser('admin', 'admin@example.com', 'admin123')"
+python manage.py createsuperuser
 ```
+*(Follow the interactive prompts to set your own username, email, and password)*
 
-Seed ~10 Dummy Students & Active Session for instant testing:
+Seed ~10 Dummy Students & Active Session for instant testing (optional):
 
 ```bash
 python seed_dummy_students.py
@@ -133,12 +131,12 @@ npm run dev
 
 ---
 
-## 🔑 Login Credentials
+## 👥 User Roles & Access
 
-| Role | Username | Password | Access Level |
-| :--- | :--- | :--- | :--- |
-| **Volunteer (Normal)** | `smartpass` | `src@2019` | Direct Live Scanner & Session Selection Only |
-| **Super Admin** | `adminpass` | `src@2019` | Full Control (Events, CSV Upload, QR Dispatch, Reports, SMTP) |
+| Role | Access Level |
+| :--- | :--- |
+| **Volunteer (Scanner)** | Direct Live Scanner & Session Selection Only |
+| **Super Admin** | Full Control (Events, Student Directory, CSV Upload, QR Dispatch, Reports, SMTP Settings) |
 
 ---
 
@@ -167,4 +165,3 @@ Run the automated backend test suite:
 cd backend
 python test_section8_security.py
 ```
->>>>>>> a5b21dc (Deploy Smart Attendance QR System)
