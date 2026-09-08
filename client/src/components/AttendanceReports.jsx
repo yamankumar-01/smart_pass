@@ -15,18 +15,34 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
     }
   });
   const [selectedEventId, setSelectedEventId] = useState(() => {
-    if (selectedEventForReport) return selectedEventForReport.id;
+    if (selectedEventForReport) return String(selectedEventForReport.id);
     try {
+      const saved = localStorage.getItem('smartpass_selected_event_id');
+      if (saved) return String(saved);
       const cached = localStorage.getItem('cached_events_list');
       if (cached) {
         const list = JSON.parse(cached);
-        if (list.length > 0) return list[0].id;
+        if (list.length > 0) return String(list[0].id);
       }
     } catch {}
     return '';
   });
-  const [matrixData, setMatrixData] = useState(null);
+
+  const [matrixData, setMatrixData] = useState(() => {
+    try {
+      const initId = (selectedEventForReport && selectedEventForReport.id)
+        || localStorage.getItem('smartpass_selected_event_id')
+        || (JSON.parse(localStorage.getItem('cached_events_list') || '[]')[0]?.id);
+      if (initId) {
+        const cached = localStorage.getItem(`smartpass_matrix_data_${initId}`);
+        if (cached) return JSON.parse(cached);
+      }
+    } catch {}
+    return null;
+  });
+
   const [matrixLoading, setMatrixLoading] = useState(false);
+  const [isMatrixSyncing, setIsMatrixSyncing] = useState(false);
   const [matrixSearch, setMatrixSearch] = useState('');
   const [togglingId, setTogglingId] = useState(null);
 
@@ -55,7 +71,13 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
             percentage: pct
           };
         });
-        return { ...prev, matrix: newMatrix };
+        const updated = { ...prev, matrix: newMatrix };
+        if (selectedEventId) {
+          try {
+            localStorage.setItem(`smartpass_matrix_data_${selectedEventId}`, JSON.stringify(updated));
+          } catch (e) {}
+        }
+        return updated;
       });
     } catch (err) {
       console.error('Failed to toggle attendance:', err);
@@ -140,17 +162,39 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
     }
   };
 
-  // Load Matrix Data for Selected Event
-  const loadMatrixData = async (eventId) => {
+  // Load Matrix Data for Selected Event with instant pre-hydration and background sync
+  const loadMatrixData = async (eventId, forceSync = false) => {
     if (!eventId) return;
-    setMatrixLoading(true);
+
+    let hasCached = false;
+    try {
+      const cached = localStorage.getItem(`smartpass_matrix_data_${eventId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.matrix && parsed.matrix.length > 0) {
+          hasCached = true;
+          setMatrixData(parsed);
+        }
+      }
+    } catch (e) {}
+
+    if (!hasCached) {
+      setMatrixLoading(true);
+    } else {
+      setIsMatrixSyncing(true);
+    }
+
     try {
       const res = await api.get(`/events/${eventId}/matrix-report/`);
       setMatrixData(res.data);
+      try {
+        localStorage.setItem(`smartpass_matrix_data_${eventId}`, JSON.stringify(res.data));
+      } catch (e) {}
     } catch (err) {
       console.error('Failed to load event matrix report:', err);
     } finally {
       setMatrixLoading(false);
+      setIsMatrixSyncing(false);
     }
   };
 
@@ -160,8 +204,12 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
 
   useEffect(() => {
     if (selectedEventForReport) {
-      setSelectedEventId(selectedEventForReport.id);
+      const newId = String(selectedEventForReport.id);
+      setSelectedEventId(newId);
       setViewMode('event_matrix');
+      try {
+        localStorage.setItem('smartpass_selected_event_id', newId);
+      } catch (e) {}
     }
   }, [selectedEventForReport]);
 
@@ -267,13 +315,23 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                   className="form-select"
                   style={{ flex: '1 1 200px', minWidth: '180px', fontWeight: 600 }}
                   value={selectedEventId}
-                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setSelectedEventId(newId);
+                    try {
+                      localStorage.setItem('smartpass_selected_event_id', newId);
+                      const cached = localStorage.getItem(`smartpass_matrix_data_${newId}`);
+                      if (cached) {
+                        setMatrixData(JSON.parse(cached));
+                      }
+                    } catch (err) {}
+                  }}
                 >
                   {events.length === 0 ? (
                     <option value="">No events created yet</option>
                   ) : (
                     events.map(ev => (
-                      <option key={ev.id} value={ev.id}>
+                      <option key={ev.id} value={String(ev.id)}>
                         {ev.title} ({ev.sessions?.length || 0} Days)
                       </option>
                     ))
@@ -283,6 +341,16 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
 
               {selectedEventId && (
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-start' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => loadMatrixData(selectedEventId, true)}
+                    disabled={isMatrixSyncing}
+                    style={{ flex: '1 1 auto', justifyContent: 'center' }}
+                    title="Re-calculate and sync latest attendance matrix from database"
+                  >
+                    <RefreshCw size={16} className={isMatrixSyncing ? 'spin' : ''} /> {isMatrixSyncing ? 'Syncing...' : 'Refresh Matrix'}
+                  </button>
                   <a
                     href={`/api/events/${selectedEventId}/export-excel/`}
                     download
@@ -304,9 +372,17 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
             </div>
           </div>
 
-          {matrixLoading ? (
-            <div className="card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-              Calculating multi-day attendance matrix...
+          {matrixLoading && (!matrixData || !matrixData.matrix || matrixData.matrix.length === 0) ? (
+            <div className="card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <RefreshCw size={32} className="spin" color="var(--primary)" />
+                <h4 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.05rem' }}>
+                  Calculating Consolidated Attendance Matrix...
+                </h4>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Aggregating multi-day lecture records for {events.find(e => String(e.id) === String(selectedEventId))?.title || 'event'}
+                </p>
+              </div>
             </div>
           ) : !matrixData || !matrixData.sessions || matrixData.sessions.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>

@@ -639,45 +639,57 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='matrix-report')
     def matrix_report(self, request, pk=None):
-        event_obj = self.get_object()
-        sessions = event_obj.sessions.all().order_by('date', 'id')
-        
-        passes = list(event_obj.passes.all().select_related('student').order_by('student__name'))
-        if passes:
-            students = [p.student for p in passes]
-        else:
-            students = list(Student.objects.all().order_by('name'))
+        # 1. Fast event lookup (bypasses expensive get_queryset prefetches)
+        event_dict = Event.objects.filter(id=pk).values('id', 'title', 'description', 'start_date', 'end_date').first()
+        if not event_dict:
+            return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        records = AttendanceRecord.objects.filter(session__in=sessions, status='PRESENT')
+        # 2. Fast sessions lookup
+        sessions = list(AttendanceSession.objects.filter(event_id=pk).values(
+            'id', 'title', 'day_label', 'topic', 'date', 'is_active'
+        ).order_by('date', 'id'))
+        session_ids = [s['id'] for s in sessions]
+
+        # 3. Fast passes & students query with values()
+        passes = list(EventPass.objects.filter(event_id=pk).values(
+            'student__id', 'student__name', 'student__email', 'student__branch', 'student__year', 'student__section'
+        ).order_by('student__name'))
+
+        if passes:
+            students = [
+                {
+                    'id': p['student__id'],
+                    'name': p['student__name'],
+                    'email': p['student__email'],
+                    'branch': p['student__branch'],
+                    'year': p['student__year'],
+                    'section': p['student__section'],
+                }
+                for p in passes
+            ]
+        else:
+            students = list(Student.objects.all().values('id', 'name', 'email', 'branch', 'year', 'section').order_by('name'))
+
+        # 4. Fast single-query attendance records
+        records = list(AttendanceRecord.objects.filter(session_id__in=session_ids, status='PRESENT').values('student_id', 'session_id'))
         student_present_map = {}
         for r in records:
-            if r.student_id not in student_present_map:
-                student_present_map[r.student_id] = set()
-            student_present_map[r.student_id].add(r.session_id)
+            sid = r['student_id']
+            if sid not in student_present_map:
+                student_present_map[sid] = set()
+            student_present_map[sid].add(r['session_id'])
 
-        session_list = AttendanceSessionSerializer(sessions, many=True).data
-        session_ids = [s['id'] for s in session_list]
-
+        total_days = len(session_ids)
         matrix_rows = []
         for st in students:
-            p_set = student_present_map.get(st.id, set())
+            p_set = student_present_map.get(st['id'], set())
             present_days = len(p_set)
-            total_days = len(session_ids)
             pct = round((present_days / total_days) * 100) if total_days > 0 else 0
 
-            att_map = {}
-            for sid in session_ids:
-                att_map[sid] = 'PRESENT' if sid in p_set else 'ABSENT'
+            att_map = {sid: ('PRESENT' if sid in p_set else 'ABSENT') for sid in session_ids}
 
             matrix_rows.append({
-                'student': {
-                    'id': st.id,
-                    'name': st.name,
-                    'email': st.email,
-                    'branch': st.branch,
-                    'year': st.year,
-                    'section': st.section
-                },
+                'student': st,
                 'attendance': att_map,
                 'total_present': present_days,
                 'total_days': total_days,
@@ -685,51 +697,64 @@ class EventViewSet(viewsets.ModelViewSet):
             })
 
         return Response({
-            'event': {
-                'id': event_obj.id,
-                'title': event_obj.title,
-                'description': event_obj.description,
-                'start_date': event_obj.start_date,
-                'end_date': event_obj.end_date
-            },
-            'sessions': session_list,
+            'event': event_dict,
+            'sessions': sessions,
             'matrix': matrix_rows
         })
 
     @action(detail=True, methods=['get'], url_path='export-csv')
     def export_csv(self, request, pk=None):
-        event_obj = self.get_object()
-        sessions = event_obj.sessions.all().order_by('date', 'id')
-        
-        passes = list(event_obj.passes.all().select_related('student').order_by('student__name'))
-        if passes:
-            students = [p.student for p in passes]
-        else:
-            students = list(Student.objects.all().order_by('name'))
+        event_dict = Event.objects.filter(id=pk).values('id', 'title').first()
+        if not event_dict:
+            return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        records = AttendanceRecord.objects.filter(session__in=sessions, status='PRESENT')
-        student_present_set = {(r.student_id, r.session_id) for r in records}
+        sessions = list(AttendanceSession.objects.filter(event_id=pk).values(
+            'id', 'title', 'day_label', 'topic', 'date'
+        ).order_by('date', 'id'))
+        session_ids = [s['id'] for s in sessions]
+
+        passes = list(EventPass.objects.filter(event_id=pk).values(
+            'student__id', 'student__name', 'student__email', 'student__branch', 'student__year', 'student__section'
+        ).order_by('student__name'))
+
+        if passes:
+            students = [
+                {
+                    'id': p['student__id'],
+                    'name': p['student__name'],
+                    'email': p['student__email'],
+                    'branch': p['student__branch'],
+                    'year': p['student__year'],
+                    'section': p['student__section'],
+                }
+                for p in passes
+            ]
+        else:
+            students = list(Student.objects.all().values('id', 'name', 'email', 'branch', 'year', 'section').order_by('name'))
+
+        records = list(AttendanceRecord.objects.filter(session_id__in=session_ids, status='PRESENT').values('student_id', 'session_id'))
+        student_present_set = {(r['student_id'], r['session_id']) for r in records}
 
         response = HttpResponse(content_type='text/csv')
-        filename = f"Event_{event_obj.title.replace(' ', '_')}_Attendance_Report.csv"
+        filename = f"Event_{event_dict['title'].replace(' ', '_')}_Attendance_Report.csv"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
         writer = csv.writer(response)
         
         header = ['Student Name', 'Email', 'Branch', 'Year', 'Section']
         for s in sessions:
-            label = s.day_label or f"Session {s.id}"
-            if s.topic:
-                label += f" ({s.topic})"
+            label = s['day_label'] or f"Session {s['id']}"
+            if s['topic']:
+                label += f" ({s['topic']})"
             header.append(label)
         header.extend(['Total Present Days', 'Total Event Days', 'Attendance %'])
         writer.writerow(header)
 
         for st in students:
-            row = [st.name, st.email, st.branch, st.year, st.section]
+            row = [st['name'], st['email'], st['branch'], st['year'], st['section']]
             p_days = 0
             for s in sessions:
-                if (st.id, s.id) in student_present_set:
+                if (st['id'], s['id']) in student_present_set:
                     row.append('PRESENT')
                     p_days += 1
                 else:
@@ -744,17 +769,36 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='export-excel')
     def export_excel(self, request, pk=None):
-        event_obj = self.get_object()
-        sessions = event_obj.sessions.all().order_by('date', 'id')
-        
-        passes = list(event_obj.passes.all().select_related('student').order_by('student__name'))
-        if passes:
-            students = [p.student for p in passes]
-        else:
-            students = list(Student.objects.all().order_by('name'))
+        event_dict = Event.objects.filter(id=pk).values('id', 'title').first()
+        if not event_dict:
+            return Response({'error': 'Event not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        records = AttendanceRecord.objects.filter(session__in=sessions, status='PRESENT')
-        student_present_set = {(r.student_id, r.session_id) for r in records}
+        sessions = list(AttendanceSession.objects.filter(event_id=pk).values(
+            'id', 'title', 'day_label', 'topic', 'date'
+        ).order_by('date', 'id'))
+        session_ids = [s['id'] for s in sessions]
+
+        passes = list(EventPass.objects.filter(event_id=pk).values(
+            'student__id', 'student__name', 'student__email', 'student__branch', 'student__year', 'student__section'
+        ).order_by('student__name'))
+
+        if passes:
+            students = [
+                {
+                    'id': p['student__id'],
+                    'name': p['student__name'],
+                    'email': p['student__email'],
+                    'branch': p['student__branch'],
+                    'year': p['student__year'],
+                    'section': p['student__section'],
+                }
+                for p in passes
+            ]
+        else:
+            students = list(Student.objects.all().values('id', 'name', 'email', 'branch', 'year', 'section').order_by('name'))
+
+        records = list(AttendanceRecord.objects.filter(session_id__in=session_ids, status='PRESENT').values('student_id', 'session_id'))
+        student_present_set = {(r['student_id'], r['session_id']) for r in records}
 
         html_content = f"""
         <html>
@@ -771,7 +815,7 @@ class EventViewSet(viewsets.ModelViewSet):
         </head>
         <body>
           <table>
-            <tr><td colspan="{5 + len(sessions) + 3}" class="title-cell">{event_obj.title} - Consolidated Multi-Day Attendance Sheet</td></tr>
+            <tr><td colspan="{5 + len(sessions) + 3}" class="title-cell">{event_dict['title']} - Consolidated Multi-Day Attendance Sheet</td></tr>
             <tr>
               <th>Student Name</th>
               <th>Email</th>
@@ -780,10 +824,10 @@ class EventViewSet(viewsets.ModelViewSet):
               <th>Section</th>
         """
         for s in sessions:
-            label = s.day_label or f"Session {s.id}"
-            if s.topic:
-                label += f" - {s.topic}"
-            html_content += f"<th>{label} ({s.date})</th>"
+            label = s['day_label'] or f"Session {s['id']}"
+            if s['topic']:
+                label += f" - {s['topic']}"
+            html_content += f"<th>{label} ({s['date']})</th>"
         html_content += """
               <th>Present Count</th>
               <th>Total Days</th>
@@ -793,9 +837,9 @@ class EventViewSet(viewsets.ModelViewSet):
 
         for st in students:
             p_days = 0
-            html_content += f"<tr><td>{st.name}</td><td>{st.email}</td><td>{st.branch}</td><td>{st.year}</td><td>{st.section}</td>"
+            html_content += f"<tr><td>{st['name']}</td><td>{st['email']}</td><td>{st['branch']}</td><td>{st['year']}</td><td>{st['section']}</td>"
             for s in sessions:
-                if (st.id, s.id) in student_present_set:
+                if (st['id'], s['id']) in student_present_set:
                     html_content += '<td class="present">PRESENT</td>'
                     p_days += 1
                 else:
@@ -807,7 +851,7 @@ class EventViewSet(viewsets.ModelViewSet):
         html_content += "</table></body></html>"
 
         response = HttpResponse(html_content, content_type='application/vnd.ms-excel; charset=utf-8')
-        filename = f"{event_obj.title.replace(' ', '_')}_Attendance.xls"
+        filename = f"{event_dict['title'].replace(' ', '_')}_Attendance.xls"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 
