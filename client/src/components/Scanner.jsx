@@ -199,11 +199,22 @@ export default function Scanner({ activeSession, setActiveSession }) {
       setEvents(eventList);
 
       if (eventList.length > 0) {
-        let initialEvent = eventList[0];
+        let initialEvent = null;
         if (activeSession && (activeSession.event || activeSession.event_id)) {
           const targetId = activeSession.event || activeSession.event_id;
-          const match = eventList.find(e => e.id === targetId);
-          if (match) initialEvent = match;
+          initialEvent = eventList.find(e => e.id === targetId);
+        }
+        if (!initialEvent) {
+          const savedEventId = sessionStorage.getItem('smartpass_selected_event_id') || localStorage.getItem('smartpass_selected_event_id');
+          if (savedEventId) {
+            initialEvent = eventList.find(e => String(e.id) === String(savedEventId));
+          }
+        }
+        if (!initialEvent) {
+          // Prioritize main event (Aarambh) over secondary/volunteer events
+          initialEvent = eventList.find(e => e.title.toLowerCase().includes('aarambh'))
+            || [...eventList].sort((a, b) => (b.total_enrolled || 0) - (a.total_enrolled || 0))[0]
+            || eventList[0];
         }
 
         setSelectedEventId(String(initialEvent.id));
@@ -834,6 +845,10 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   onChange={(e) => {
                     const newEventId = e.target.value;
                     setSelectedEventId(newEventId);
+                    try {
+                      sessionStorage.setItem('smartpass_selected_event_id', newEventId);
+                      localStorage.setItem('smartpass_selected_event_id', newEventId);
+                    } catch (err) {}
                     const ev = events.find(ev => String(ev.id) === String(newEventId));
                     if (ev && ev.sessions && ev.sessions.length > 0) {
                       const activeSess = ev.sessions.find(s => s.is_active || s.status === 'ACTIVE') || ev.sessions[0];
@@ -976,6 +991,37 @@ export default function Scanner({ activeSession, setActiveSession }) {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Prominent Current Target Banner for Scanner */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(129, 140, 248, 0.15))',
+        border: '1.5px solid rgba(99, 102, 241, 0.35)',
+        borderRadius: '12px',
+        padding: '10px 16px',
+        marginBottom: '1.25rem',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '10px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '1.25rem' }}>🎯</span>
+          <div>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Currently Scanning For:
+            </div>
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>
+              {currentEvent?.title || 'No Event'} — <span style={{ color: 'var(--primary)' }}>{activeSession?.day_label || activeSession?.title || 'No Day Selected'}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '0.82rem', fontWeight: 700, background: 'var(--bg-card)', padding: '5px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+            Present: <strong style={{ color: 'var(--success)' }}>{sessionStats.present}</strong> / {sessionStats.total}
+          </span>
         </div>
       </div>
 
