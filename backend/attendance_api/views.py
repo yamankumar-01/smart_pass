@@ -882,9 +882,33 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='passes')
     def passes_list(self, request, pk=None):
-        event_obj = self.get_object()
-        passes = event_obj.passes.all().select_related('student', 'event').order_by('student__name')
-        return Response(EventPassSerializer(passes, many=True).data)
+        # Ultra-fast single query bypassing expensive get_queryset() session prefetches
+        passes_qs = list(EventPass.objects.filter(event_id=pk).values(
+            'id', 'event_id', 'event__title', 'event_token', 'qr_sent', 'created_at',
+            'student__id', 'student__name', 'student__email', 'student__branch', 'student__year', 'student__section'
+        ).order_by('student__name'))
+
+        data = [
+            {
+                'id': p['id'],
+                'event': p['event_id'],
+                'event_title': p['event__title'] or '',
+                'student': {
+                    'id': p['student__id'],
+                    'name': p['student__name'],
+                    'email': p['student__email'],
+                    'branch': p['student__branch'],
+                    'year': p['student__year'],
+                    'section': p['student__section'],
+                } if p['student__id'] else None,
+                'event_token': p['event_token'],
+                'token': p['event_token'],
+                'qr_sent': p['qr_sent'],
+                'created_at': p['created_at'].isoformat() if p['created_at'] else None,
+            }
+            for p in passes_qs
+        ]
+        return Response(data)
 
     @action(detail=True, methods=['post'], url_path='send-single-pass')
     def send_single_pass(self, request, pk=None):

@@ -11,25 +11,52 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
       return [];
     }
   });
-  const [selectedEventId, setSelectedEventId] = useState(() => {
-    if (selectedEventForDispatch) return selectedEventForDispatch.id;
+
+  const [eventsLoading, setEventsLoading] = useState(() => {
     try {
+      const cached = localStorage.getItem('cached_events_list');
+      return !cached || JSON.parse(cached).length === 0;
+    } catch {
+      return true;
+    }
+  });
+
+  const [selectedEventId, setSelectedEventId] = useState(() => {
+    if (selectedEventForDispatch) return String(selectedEventForDispatch.id);
+    try {
+      const saved = localStorage.getItem('smartpass_selected_event_id');
+      if (saved) return String(saved);
       const cached = localStorage.getItem('cached_events_list');
       if (cached) {
         const list = JSON.parse(cached);
-        if (list.length > 0) return list[0].id;
+        if (list.length > 0) return String(list[0].id);
       }
     } catch {}
     return '';
   });
-  const [passes, setPasses] = useState([]);
+
+  const [passes, setPasses] = useState(() => {
+    try {
+      const initId = (selectedEventForDispatch && selectedEventForDispatch.id)
+        || localStorage.getItem('smartpass_selected_event_id')
+        || (JSON.parse(localStorage.getItem('cached_events_list') || '[]')[0]?.id);
+      if (initId) {
+        const cached = localStorage.getItem(`smartpass_event_passes_${initId}`);
+        if (cached) return JSON.parse(cached);
+      }
+    } catch {}
+    return [];
+  });
+
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState(null);
   const [progress, setProgress] = useState(0);
   const [tableSearch, setTableSearch] = useState('');
   const [sendingPassId, setSendingPassId] = useState(null);
 
-  const loadEvents = async () => {
+  const loadEvents = async (forceSync = false) => {
+    if (forceSync) setIsSyncing(true);
     try {
       const res = await api.get('/events/');
       const data = res.data || [];
@@ -38,27 +65,53 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
         localStorage.setItem('cached_events_list', JSON.stringify(data));
       } catch (e) {}
       if (data.length > 0 && !selectedEventId) {
-        if (selectedEventForDispatch) {
-          setSelectedEventId(selectedEventForDispatch.id);
-        } else {
-          setSelectedEventId(data[0].id);
-        }
+        const defaultId = selectedEventForDispatch ? String(selectedEventForDispatch.id) : String(data[0].id);
+        setSelectedEventId(defaultId);
+        try {
+          localStorage.setItem('smartpass_selected_event_id', defaultId);
+        } catch (e) {}
       }
     } catch (err) {
       console.error('Failed to load events:', err);
+    } finally {
+      setEventsLoading(false);
+      if (forceSync) setIsSyncing(false);
     }
   };
 
-  const loadEventPasses = async (eventId) => {
+  const loadEventPasses = async (eventId, showBlockingSpinner = false) => {
     if (!eventId) return;
-    setLoading(true);
+
+    let hasCached = false;
+    try {
+      const cached = localStorage.getItem(`smartpass_event_passes_${eventId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.length > 0) {
+          hasCached = true;
+          setPasses(parsed);
+        }
+      }
+    } catch (e) {}
+
+    if (!hasCached && showBlockingSpinner) {
+      setLoading(true);
+    } else {
+      setIsSyncing(true);
+    }
+
     try {
       const res = await api.get(`/events/${eventId}/passes/`);
-      setPasses(res.data);
+      const list = res.data || [];
+      setPasses(list);
+      try {
+        localStorage.setItem(`smartpass_event_passes_${eventId}`, JSON.stringify(list));
+      } catch (e) {}
     } catch (err) {
       console.error('Failed to load event passes:', err);
     } finally {
       setLoading(false);
+      setIsSyncing(false);
     }
   };
 
@@ -68,17 +121,33 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
 
   useEffect(() => {
     if (selectedEventForDispatch) {
-      setSelectedEventId(selectedEventForDispatch.id);
+      const newId = String(selectedEventForDispatch.id);
+      setSelectedEventId(newId);
+      try {
+        localStorage.setItem('smartpass_selected_event_id', newId);
+      } catch (e) {}
     }
   }, [selectedEventForDispatch]);
 
   useEffect(() => {
     if (selectedEventId) {
-      loadEventPasses(selectedEventId);
+      loadEventPasses(selectedEventId, passes.length === 0);
     }
   }, [selectedEventId]);
 
-  const selectedEvent = events.find(e => e.id === parseInt(selectedEventId));
+  const handleEventChange = (newId) => {
+    setSelectedEventId(newId);
+    setDispatchStatus(null);
+    try {
+      localStorage.setItem('smartpass_selected_event_id', newId);
+      const cached = localStorage.getItem(`smartpass_event_passes_${newId}`);
+      if (cached) {
+        setPasses(JSON.parse(cached));
+      }
+    } catch (e) {}
+  };
+
+  const selectedEvent = events.find(e => String(e.id) === String(selectedEventId));
   const totalPasses = passes.length > 0 ? passes.length : (selectedEvent?.total_enrolled || 0);
   const qrSentCount = passes.length > 0 
     ? passes.filter(p => p.qr_sent).length 
@@ -192,8 +261,15 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
               <Users size={16} /> Manage Event Students
             </button>
           )}
-          <button className="btn btn-secondary" onClick={() => { loadEvents(); if (selectedEventId) loadEventPasses(selectedEventId); }}>
-            <RefreshCw size={16} /> Refresh Passes
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => { 
+              loadEvents(true); 
+              if (selectedEventId) loadEventPasses(selectedEventId, false); 
+            }}
+            disabled={isSyncing}
+          >
+            <RefreshCw size={16} className={isSyncing ? 'spin' : ''} /> {isSyncing ? 'Syncing...' : 'Refresh Passes'}
           </button>
         </div>
       </div>
@@ -209,16 +285,13 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
               className="form-select"
               style={{ flex: '1 1 220px', minWidth: '180px', fontWeight: 600 }}
               value={selectedEventId}
-              onChange={(e) => {
-                setSelectedEventId(e.target.value);
-                setDispatchStatus(null);
-              }}
+              onChange={(e) => handleEventChange(e.target.value)}
             >
               {events.length === 0 ? (
-                <option value="">No events created yet</option>
+                <option value="">{eventsLoading ? '⏳ Loading events...' : 'No events created yet'}</option>
               ) : (
                 events.map(ev => (
-                  <option key={ev.id} value={ev.id}>
+                  <option key={ev.id} value={String(ev.id)}>
                     {ev.title} ({ev.total_enrolled || 0} Students)
                   </option>
                 ))
@@ -242,7 +315,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
           </div>
           <div className="stat-info">
             <h4>Enrolled Students</h4>
-            <div className="value">{totalPasses}</div>
+            <div className="value">{eventsLoading && events.length === 0 ? '...' : totalPasses}</div>
           </div>
         </div>
 
@@ -252,7 +325,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
           </div>
           <div className="stat-info">
             <h4>Event Passes Sent</h4>
-            <div className="value" style={{ color: 'var(--success)' }}>{qrSentCount}</div>
+            <div className="value" style={{ color: 'var(--success)' }}>{eventsLoading && events.length === 0 ? '...' : qrSentCount}</div>
           </div>
         </div>
 
@@ -262,7 +335,7 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
           </div>
           <div className="stat-info">
             <h4>Pending Delivery</h4>
-            <div className="value" style={{ color: 'var(--warning)' }}>{pendingCount}</div>
+            <div className="value" style={{ color: 'var(--warning)' }}>{eventsLoading && events.length === 0 ? '...' : pendingCount}</div>
           </div>
         </div>
       </div>
@@ -372,7 +445,18 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
             </tr>
           </thead>
           <tbody>
-            {filteredPasses.length === 0 ? (
+            {loading && passes.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                    <RefreshCw size={28} className="spin" color="var(--primary)" />
+                    <p style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', margin: 0 }}>
+                      Loading passes for {selectedEvent?.title || 'event'}...
+                    </p>
+                  </div>
+                </td>
+              </tr>
+            ) : filteredPasses.length === 0 ? (
               <tr>
                 <td colSpan="6" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
                   {passes.length === 0 ? (

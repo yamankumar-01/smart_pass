@@ -8,6 +8,7 @@ import AttendanceReports from './components/AttendanceReports';
 import EmailInbox from './components/EmailInbox';
 import SmtpSettings from './components/SmtpSettings';
 import Login from './components/Login';
+import api from './api/axios';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -101,6 +102,21 @@ export default function App() {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [userRole]);
+
+  // Eager background prefetch of events to keep localStorage cache warm for instant 0ms tab transitions
+  useEffect(() => {
+    if (isAuthenticated) {
+      api.get('/events/')
+        .then((res) => {
+          if (Array.isArray(res.data) && res.data.length > 0) {
+            try {
+              localStorage.setItem('cached_events_list', JSON.stringify(res.data));
+            } catch (e) {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated]);
 
   const handleLogout = () => {
     sessionStorage.clear();
