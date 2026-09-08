@@ -24,11 +24,13 @@ from .serializers import (
 )
 from .utils import generate_qr_code, send_student_qr_email, send_event_qr_email, send_batch_event_qr_emails, get_all_active_mail_senders
 
+from django.db import transaction, IntegrityError
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([AnonRateThrottle])
 def custom_token_obtain_pair_view(request):
     raw_user = (request.data.get('username') or '').strip()
     raw_pass = (request.data.get('password') or '').strip()
@@ -71,25 +73,44 @@ def current_user_view(request):
         })
     return Response({'username': 'Anonymous', 'is_authenticated': False, 'role': 'anonymous'})
 
+from rest_framework.permissions import BasePermission
+
+class IsAdminUserRole(BasePermission):
+    """
+    Allows access only to authenticated admin users (superusers, staff, or username 'admin'/'adminpass').
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        return bool(
+            request.user.is_superuser or
+            request.user.is_staff or
+            request.user.username.lower() in ('admin', 'adminpass')
+        )
+
+class IsVolunteerOrAdmin(BasePermission):
+    """
+    Allows access to any authenticated user (volunteer or admin).
+    """
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def change_password_view(request):
-    username = request.data.get('username') or (request.user.username if request.user and request.user.is_authenticated else 'admin')
+    """
+    Secure password change endpoint: strictly requires authenticated session
+    and validates existing password before applying update.
+    """
     old_password = request.data.get('old_password', '').strip()
     new_password = request.data.get('new_password', '').strip()
 
-    if not new_password or len(new_password) < 4:
-        return Response({'error': 'New password must be at least 4 characters long.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not new_password or len(new_password) < 6:
+        return Response({'error': 'New password must be at least 6 characters long.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.filter(username=username).first()
-    if not user:
-        user = User.objects.filter(is_superuser=True).first()
-
-    if not user:
-        return Response({'error': 'Admin user not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-    if old_password and not user.check_password(old_password):
-        return Response({'error': 'Incorrect current password.'}, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
+    if not old_password or not user.check_password(old_password):
+        return Response({'error': 'Current password is required and must be correct.'}, status=status.HTTP_400_BAD_REQUEST)
 
     user.set_password(new_password)
     user.save()
@@ -98,7 +119,12 @@ def change_password_view(request):
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all().prefetch_related('event_passes__event').order_by('id')
     serializer_class = StudentSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        # Read operations allowed for authenticated volunteers/admins; modifications strictly admin
+        if self.action in ['list', 'retrieve']:
+            return [IsVolunteerOrAdmin()]
+        return [IsAdminUserRole()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -237,13 +263,18 @@ class StudentViewSet(viewsets.ModelViewSet):
         return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def bulk_upload_csv_view(request):
     import re
     import openpyxl
     file_obj = request.FILES.get('file', None)
     if not file_obj:
         return Response({'error': 'No file uploaded. Please upload a .csv or .xlsx / .xls file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Security: Enforce 5MB upload size limit to prevent memory exhaustion DoS
+    MAX_UPLOAD_SIZE = 5 * 1024 * 1024
+    if file_obj.size > MAX_UPLOAD_SIZE:
+        return Response({'error': 'File size exceeds 5MB limit. Please upload a smaller file.'}, status=status.HTTP_400_BAD_REQUEST)
 
     filename = getattr(file_obj, 'name', '').lower()
     raw_bytes = file_obj.read()
@@ -490,7 +521,7 @@ def bulk_upload_csv_view(request):
     })
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def bulk_generate_qr_view(request):
     students_without_qr = Student.objects.filter(qr_code_image='') | Student.objects.filter(qr_code_image=None)
     generated_count = 0
@@ -506,7 +537,7 @@ def bulk_generate_qr_view(request):
     })
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def bulk_send_emails_view(request):
     force_resend = request.data.get('force_resend', False)
     student_ids = request.data.get('student_ids', None)
@@ -525,19 +556,19 @@ def bulk_send_emails_view(request):
     already_sent_count = Student.objects.filter(qr_sent=True).count()
     if not students:
         return Response({
-            'message': f'✅ Sabhi {already_sent_count} students ko pehle hi email bheja ja chuka hai! Duplicate email nahi bheja gaya.',
+            'message': f'Koi naye pending students nahi mile jinko QR pass bhejna ho (Total {already_sent_count} ko pehle hi send ho chuka hai). Agar sabhi ko dobara bhejna chahte hain, to Force Resend option use karein.',
             'sent_count': 0,
             'already_sent_count': already_sent_count,
             'failed_count': 0,
             'errors': []
         })
 
-    senders = get_all_active_mail_senders()
-    num_senders = len(senders)
+    active_senders = get_all_active_mail_senders()
+    num_senders = len(active_senders)
 
-    def _send_item(item):
-        idx, st = item
-        sender = senders[idx % num_senders] if num_senders else None
+    def _send_item(idx_and_st):
+        idx, st = idx_and_st
+        sender = active_senders[idx % num_senders] if num_senders > 0 else None
         send_student_qr_email(st, specific_sender=sender)
 
     import threading
@@ -562,7 +593,12 @@ def bulk_send_emails_view(request):
 class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.all().prefetch_related('sessions__records', 'passes').order_by('-id')
     serializer_class = EventSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        # Volunteers can view events; modifications are strictly admin
+        if self.action in ['list', 'retrieve', 'matrix_report']:
+            return [IsVolunteerOrAdmin()]
+        return [IsAdminUserRole()]
 
     @action(detail=True, methods=['post'], url_path='add-session')
     def add_session(self, request, pk=None):
@@ -853,7 +889,11 @@ class EventViewSet(viewsets.ModelViewSet):
 class AttendanceSessionViewSet(viewsets.ModelViewSet):
     queryset = AttendanceSession.objects.all().select_related('event').prefetch_related('records').order_by('event_id', 'date', 'id')
     serializer_class = AttendanceSessionSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsVolunteerOrAdmin()]
+        return [IsAdminUserRole()]
 
     def perform_create(self, serializer):
         title_val = self.request.data.get('title') or self.request.data.get('name') or 'Class Lecture'
@@ -880,7 +920,7 @@ class AttendanceSessionViewSet(viewsets.ModelViewSet):
         return Response({'message': 'Session closed successfully.'})
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def create_session_endpoint_view(request):
     title = request.data.get('title') or request.data.get('name')
     date = request.data.get('date') or datetime.date.today()
@@ -902,7 +942,7 @@ def create_session_endpoint_view(request):
     return Response(AttendanceSessionSerializer(session_obj).data, status=status.HTTP_201_CREATED)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsVolunteerOrAdmin])
 def attendance_scan_view(request):
     serializer = ScanInputSerializer(data=request.data)
     if not serializer.is_valid():
@@ -994,23 +1034,29 @@ def attendance_scan_view(request):
                 'message': 'Unrecognized QR Code! No student or event pass matches this token.'
             }, status=status.HTTP_404_NOT_FOUND)
 
-    # 3. Check Duplicate Scan
-    existing_record = AttendanceRecord.objects.filter(session=session_obj, student=student).first()
+    # 3. Check Duplicate Scan & Mark Attendance atomically to prevent double-scan race conditions
     student_data = StudentSerializer(student).data
+    try:
+        with transaction.atomic():
+            record, created = AttendanceRecord.objects.get_or_create(
+                session=session_obj,
+                student=student,
+                defaults={'status': 'PRESENT'}
+            )
+    except IntegrityError:
+        record = AttendanceRecord.objects.filter(session=session_obj, student=student).first()
+        created = False
 
-    if existing_record:
-        timestamp_str = existing_record.timestamp.strftime("%I:%M:%S %p")
+    if not created and record:
+        timestamp_str = record.timestamp.strftime("%I:%M:%S %p")
         return Response({
             'success': False,
             'duplicate': True,
             'message': f'Already marked present! Scan previously recorded at {timestamp_str}',
             'student': student_data,
-            'marked_at': existing_record.timestamp,
+            'marked_at': record.timestamp,
             'status': 'Duplicate-attempt'
         }, status=status.HTTP_200_OK)
-
-    # 4. Mark Attendance
-    record = AttendanceRecord.objects.create(session=session_obj, student=student, status='PRESENT')
 
     return Response({
         'success': True,
@@ -1022,7 +1068,7 @@ def attendance_scan_view(request):
     }, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsVolunteerOrAdmin])
 def session_report_view(request, session_id):
     try:
         session_obj = AttendanceSession.objects.get(id=session_id)
@@ -1059,7 +1105,7 @@ def session_report_view(request, session_id):
     })
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsVolunteerOrAdmin])
 def export_attendance_csv_view(request, session_id):
     try:
         session_obj = AttendanceSession.objects.get(id=session_id)
@@ -1087,7 +1133,7 @@ def export_attendance_csv_view(request, session_id):
 class EmailLogViewSet(viewsets.ModelViewSet):
     queryset = EmailLog.objects.all().order_by('-id')
     serializer_class = EmailLogSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUserRole]
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -1104,8 +1150,15 @@ class EmailLogViewSet(viewsets.ModelViewSet):
 # SMTP CONFIGURATION & TEST EMAIL ENDPOINTS
 # -------------------------------------------------------------
 
+def mask_secret(k):
+    if not k:
+        return ''
+    if len(k) <= 8:
+        return '********'
+    return f"{k[:4]}...{k[-4:]}"
+
 @api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def smtp_settings_view(request):
     all_settings = list(SMTPSetting.objects.all().order_by('id'))
     active_count = sum(1 for s in all_settings if s.is_active)
@@ -1116,8 +1169,8 @@ def smtp_settings_view(request):
             accounts_data.append({
                 'id': s.id,
                 'provider': s.provider or 'brevo',
-                'brevo_api_key': s.brevo_api_key or '',
-                'resend_api_key': s.resend_api_key or '',
+                'brevo_api_key': mask_secret(s.brevo_api_key),
+                'resend_api_key': mask_secret(s.resend_api_key),
                 'host': s.host or 'smtp.gmail.com',
                 'port': s.port or 587,
                 'use_tls': s.use_tls,
@@ -1137,8 +1190,8 @@ def smtp_settings_view(request):
             # Backward compatibility fields
             'id': first_active.id if first_active else None,
             'provider': getattr(first_active, 'provider', 'brevo'),
-            'brevo_api_key': getattr(first_active, 'brevo_api_key', ''),
-            'resend_api_key': getattr(first_active, 'resend_api_key', ''),
+            'brevo_api_key': mask_secret(getattr(first_active, 'brevo_api_key', '')),
+            'resend_api_key': mask_secret(getattr(first_active, 'resend_api_key', '')),
             'host': getattr(first_active, 'host', 'smtp.gmail.com'),
             'port': getattr(first_active, 'port', 587),
             'use_tls': getattr(first_active, 'use_tls', True),
@@ -1160,8 +1213,8 @@ def smtp_settings_view(request):
         if action == 'create' or account_id == 'new' or (not account_id and not all_settings):
             new_acc = SMTPSetting.objects.create(
                 provider=provider,
-                brevo_api_key=brevo_key,
-                resend_api_key=resend_key,
+                brevo_api_key=brevo_key if '...' not in brevo_key else '',
+                resend_api_key=resend_key if '...' not in resend_key else '',
                 host=data.get('host', 'smtp.gmail.com'),
                 port=int(data.get('port', 587)),
                 use_tls=data.get('use_tls', True),
@@ -1186,8 +1239,8 @@ def smtp_settings_view(request):
         if not target:
             target = SMTPSetting.objects.create(
                 provider=provider,
-                brevo_api_key=brevo_key,
-                resend_api_key=resend_key,
+                brevo_api_key=brevo_key if '...' not in brevo_key else '',
+                resend_api_key=resend_key if '...' not in resend_key else '',
                 host=data.get('host', 'smtp.gmail.com'),
                 port=int(data.get('port', 587)),
                 use_tls=data.get('use_tls', True),
@@ -1199,15 +1252,15 @@ def smtp_settings_view(request):
             )
         else:
             target.provider = provider
-            if 'brevo_api_key' in data:
+            if 'brevo_api_key' in data and '...' not in brevo_key and brevo_key != '':
                 target.brevo_api_key = brevo_key
-            if 'resend_api_key' in data:
+            if 'resend_api_key' in data and '...' not in resend_key and resend_key != '':
                 target.resend_api_key = resend_key
             target.host = data.get('host', target.host)
             target.port = int(data.get('port', target.port))
             target.use_tls = data.get('use_tls', target.use_tls)
             target.user = data.get('user', target.user).strip()
-            if data.get('password'):
+            if data.get('password') and '...' not in data.get('password'):
                 target.password = data.get('password').strip()
             target.from_name = data.get('from_name', target.from_name)
             target.from_email = data.get('from_email', target.from_email)
@@ -1218,7 +1271,7 @@ def smtp_settings_view(request):
         return Response({'message': 'Sender Account updated successfully!'})
 
 @api_view(['DELETE', 'POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def delete_smtp_account_view(request, account_id):
     try:
         setting = SMTPSetting.objects.get(id=account_id)
@@ -1229,7 +1282,7 @@ def delete_smtp_account_view(request, account_id):
         return Response({'error': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['POST', 'PATCH'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def toggle_smtp_account_view(request, account_id):
     try:
         setting = SMTPSetting.objects.get(id=account_id)
@@ -1241,7 +1294,7 @@ def toggle_smtp_account_view(request, account_id):
         return Response({'error': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def test_send_email_view(request):
     from django.core.mail import get_connection
     target_email = request.data.get('email', '').strip()
@@ -1321,7 +1374,7 @@ def test_send_email_view(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def seed_samples_view(request):
     today = datetime.date.today()
     session_obj, _ = AttendanceSession.objects.get_or_create(
@@ -1351,7 +1404,7 @@ def seed_samples_view(request):
     })
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsVolunteerOrAdmin])
 def toggle_attendance_view(request):
     """
     Toggles attendance for a student in a specific session.
@@ -1397,7 +1450,7 @@ def toggle_attendance_view(request):
     })
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAdminUserRole])
 def bulk_mark_present_view(request):
     """
     Allows bulk marking students as present for a session.

@@ -10,7 +10,7 @@ FRONTEND_DIST_DIR = BASE_DIR.parent / 'client' / 'dist'
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-qr-attendance-secret-key-2026-super-secure')
 
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't', 'yes')
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't', 'yes')
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '*').split(',') if h.strip()]
 
