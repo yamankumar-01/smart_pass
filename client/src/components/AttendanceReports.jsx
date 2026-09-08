@@ -22,6 +22,8 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
       const cached = localStorage.getItem('cached_events_list');
       if (cached) {
         const list = JSON.parse(cached);
+        const active = list.find(e => (e.total_enrolled || 0) > 0);
+        if (active) return String(active.id);
         if (list.length > 0) return String(list[0].id);
       }
     } catch {}
@@ -332,7 +334,7 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                   ) : (
                     events.map(ev => (
                       <option key={ev.id} value={String(ev.id)}>
-                        {ev.title} ({ev.sessions?.length || 0} Days)
+                        {ev.title} ({ev.total_enrolled || 0} Enrolled • {ev.sessions?.length || 0} Days)
                       </option>
                     ))
                   )}

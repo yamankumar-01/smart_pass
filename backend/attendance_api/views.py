@@ -668,7 +668,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 for p in passes
             ]
         else:
-            students = list(Student.objects.all().values('id', 'name', 'email', 'branch', 'year', 'section').order_by('name'))
+            students = []
 
         # 4. Fast single-query attendance records
         records = list(AttendanceRecord.objects.filter(session_id__in=session_ids, status='PRESENT').values('student_id', 'session_id'))
@@ -730,7 +730,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 for p in passes
             ]
         else:
-            students = list(Student.objects.all().values('id', 'name', 'email', 'branch', 'year', 'section').order_by('name'))
+            students = []
 
         records = list(AttendanceRecord.objects.filter(session_id__in=session_ids, status='PRESENT').values('student_id', 'session_id'))
         student_present_set = {(r['student_id'], r['session_id']) for r in records}
@@ -795,7 +795,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 for p in passes
             ]
         else:
-            students = list(Student.objects.all().values('id', 'name', 'email', 'branch', 'year', 'section').order_by('name'))
+            students = []
 
         records = list(AttendanceRecord.objects.filter(session_id__in=session_ids, status='PRESENT').values('student_id', 'session_id'))
         student_present_set = {(r['student_id'], r['session_id']) for r in records}
