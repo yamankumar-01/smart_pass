@@ -1,9 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Smart QR Attendance System</title>
+    <title>SmartPass - QR Attendance System</title>
+    
+    <!-- Instant Anti-Flicker Execution: Default is STRICTLY Light (White) -->
+    <script>
+      (function() {
+        try {
+          var t = localStorage.getItem('smartpass_theme');
+          var theme = (t === 'dark') ? 'dark' : 'light';
+          document.documentElement.setAttribute('data-theme', theme);
+          document.documentElement.className = theme;
+        } catch(e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+    <style>
+      /* Prevent any Dark Theme Flash on slow reloads or network lag */
+      html, body {
+        background-color: #f8fafc !important;
+        color: #0f172a;
+      }
+      html[data-theme="dark"], html[data-theme="dark"] body {
+        background-color: #0f172a !important;
+        color: #f8fafc;
+      }
+    </style>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">

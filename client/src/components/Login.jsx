@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { QrCode, Lock, User, KeyRound, LogIn, AlertCircle, X, Shield, Users, Eye, EyeOff } from 'lucide-react';
+import { QrCode, Lock, User, KeyRound, LogIn, AlertCircle, X, Shield, Users, Eye, EyeOff, Sun, Moon } from 'lucide-react';
 import api from '../api/axios';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Login({ onLoginSuccess, onClose, isModal = false }) {
   const [username, setUsername] = useState('');
@@ -8,6 +9,7 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const { theme, toggleTheme } = useTheme();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -56,6 +58,26 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
 
   const content = (
     <div className="card" style={{ maxWidth: '440px', width: '100%', padding: '2.25rem', boxShadow: 'var(--shadow-lg)', border: '1px solid var(--border)', position: 'relative', background: 'var(--bg-card)' }}>
+      {/* Theme Toggle Button on Login Screen */}
+      <button
+        type="button"
+        className="theme-toggle-btn"
+        onClick={toggleTheme}
+        title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+        style={{
+          position: 'absolute',
+          top: '16px',
+          left: '16px',
+          padding: '5px 10px',
+          fontSize: '0.78rem'
+        }}
+      >
+        <span className="theme-toggle-icon">
+          {theme === 'dark' ? <Sun size={14} color="#fbbf24" /> : <Moon size={14} color="#4f46e5" />}
+        </span>
+        <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+      </button>
+
       {isModal && onClose && (
         <button
           onClick={onClose}

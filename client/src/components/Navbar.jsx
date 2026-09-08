@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { QrCode, Calendar, Users, Send, FileSpreadsheet, Mail, Settings, LogOut, Shield, Menu, X, UserCheck } from 'lucide-react';
+import { QrCode, Calendar, Users, Send, FileSpreadsheet, Mail, Settings, LogOut, Shield, Menu, X, UserCheck, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Navbar({ activeTab, setActiveTab, userRole, onLogout }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   const allNavItems = [
     { id: 'scanner', label: 'Live Scanner', icon: QrCode, roles: ['admin', 'volunteer'] },
@@ -67,8 +69,21 @@ export default function Navbar({ activeTab, setActiveTab, userRole, onLogout }) 
           </ul>
         </nav>
 
-        {/* Desktop User Info & Logout */}
-        <div className="desktop-user-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Desktop User Info & Actions */}
+        <div className="desktop-user-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Light / Dark Mode Toggle */}
+          <button
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+            aria-label="Toggle theme mode"
+          >
+            <span className="theme-toggle-icon">
+              {theme === 'dark' ? <Sun size={15} color="#fbbf24" /> : <Moon size={15} color="#4f46e5" />}
+            </span>
+            <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+          </button>
+
           <div style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
             {isAdmin ? (
               <>
@@ -95,14 +110,26 @@ export default function Navbar({ activeTab, setActiveTab, userRole, onLogout }) 
           </button>
         </div>
 
-        {/* Mobile Hamburger Toggle Button */}
-        <button
-          className="mobile-menu-toggle"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          aria-label="Toggle Mobile Navigation"
-        >
-          {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
+        {/* Mobile Header Actions (Theme Toggle + Hamburger) */}
+        <div className="mobile-header-actions" style={{ display: 'none', alignItems: 'center', gap: '8px' }}>
+          <button
+            className="theme-toggle-btn"
+            style={{ padding: '6px 10px' }}
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+            aria-label="Toggle theme mode"
+          >
+            {theme === 'dark' ? <Sun size={16} color="#fbbf24" /> : <Moon size={16} color="#4f46e5" />}
+          </button>
+
+          <button
+            className="mobile-menu-toggle"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle Mobile Navigation"
+          >
+            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
       </header>
 
       {/* Mobile Backdrop & Drawer Menu */}
@@ -152,7 +179,16 @@ export default function Navbar({ activeTab, setActiveTab, userRole, onLogout }) 
               })}
             </ul>
 
-            <div style={{ marginTop: 'auto', paddingTop: '1.25rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ marginTop: 'auto', paddingTop: '1.25rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ width: '100%', justifyContent: 'center', gap: '8px', fontWeight: 600 }}
+                onClick={toggleTheme}
+              >
+                {theme === 'dark' ? <Sun size={17} color="#fbbf24" /> : <Moon size={17} color="#4f46e5" />}
+                <span>{theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}</span>
+              </button>
+
               <button
                 className="btn btn-danger"
                 style={{ width: '100%', justifyContent: 'center' }}
