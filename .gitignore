@@ -25,3 +25,8 @@ client/.vite/
 .idea/
 .vscode/
 Thumbs.db
+
+# Local database dumps and exports
+*backup*.json
+*.xls
+*.xlsx
