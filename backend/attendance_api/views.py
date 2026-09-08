@@ -1181,7 +1181,7 @@ def session_report_view(request, session_id):
         })
 
     # Full report serialization (only when full list is requested by detailed Reports page)
-    present_records = AttendanceRecord.objects.filter(session=session_obj, status='PRESENT').select_related('student')
+    present_records = AttendanceRecord.objects.filter(session=session_obj, status='PRESENT').select_related('student').prefetch_related('student__event_passes__event')
     present_student_ids = [r.student.id for r in present_records]
 
     present_data = []
@@ -1192,7 +1192,11 @@ def session_report_view(request, session_id):
         st_data['status'] = r.status
         present_data.append(st_data)
 
-    absent_students = Student.objects.exclude(id__in=present_student_ids).order_by('name')
+    if session_obj.event_id:
+        enrolled_student_ids = list(EventPass.objects.filter(event=session_obj.event).values_list('student_id', flat=True))
+        absent_students = Student.objects.filter(id__in=enrolled_student_ids).exclude(id__in=present_student_ids).prefetch_related('event_passes__event').order_by('name')
+    else:
+        absent_students = Student.objects.exclude(id__in=present_student_ids).prefetch_related('event_passes__event').order_by('name')
     absent_data = StudentSerializer(absent_students, many=True).data
 
     return Response({
