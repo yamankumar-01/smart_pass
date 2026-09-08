@@ -84,22 +84,6 @@ export default function Navbar({ activeTab, setActiveTab, userRole, onLogout }) 
             <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
           </button>
 
-          <div style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {isAdmin ? (
-              <>
-                <Shield size={15} color="var(--success)" />
-                <span style={{ fontWeight: 700, color: 'var(--success)' }}>Admin: {currentUsername}</span>
-                <span className="badge badge-success" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>Full Access</span>
-              </>
-            ) : (
-              <>
-                <UserCheck size={15} color="var(--primary)" />
-                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Volunteer: {currentUsername}</span>
-                <span className="badge" style={{ fontSize: '0.7rem', padding: '2px 6px', background: 'rgba(79, 70, 229, 0.2)', color: '#818cf8' }}>Scanner Only</span>
-              </>
-            )}
-          </div>
-
           <button
             className="btn btn-secondary btn-sm"
             onClick={onLogout}
