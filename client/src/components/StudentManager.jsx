@@ -13,7 +13,7 @@ export default function StudentManager({ initialEventFilter }) {
   });
   const [events, setEvents] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('smartpass_events_cache');
+      const cached = localStorage.getItem('cached_events_list') || sessionStorage.getItem('smartpass_events_cache');
       return cached ? JSON.parse(cached) : [];
     } catch {
       return [];
@@ -57,6 +57,7 @@ export default function StudentManager({ initialEventFilter }) {
       setEvents(res.data);
       try {
         sessionStorage.setItem('smartpass_events_cache', JSON.stringify(res.data));
+        localStorage.setItem('cached_events_list', JSON.stringify(res.data));
       } catch {}
     } catch (err) {
       console.error('Failed to load events:', err);

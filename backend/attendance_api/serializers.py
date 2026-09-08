@@ -46,11 +46,17 @@ class AttendanceSessionSerializer(serializers.ModelSerializer):
         return 'ACTIVE' if obj.is_active else 'CLOSED'
 
     def get_present_count(self, obj):
+        if hasattr(obj, 'annotated_present_count'):
+            return obj.annotated_present_count
         if hasattr(obj, '_prefetched_objects_cache') and 'records' in obj._prefetched_objects_cache:
             return sum(1 for r in obj.records.all() if r.status == 'PRESENT')
         return obj.records.filter(status='PRESENT').count()
 
     def get_total_students(self, obj):
+        if hasattr(obj, 'annotated_total_students'):
+            return obj.annotated_total_students
+        if obj.event_id and hasattr(obj.event, 'annotated_total_enrolled'):
+            return obj.event.annotated_total_enrolled
         if obj.event_id and hasattr(obj.event, '_prefetched_objects_cache') and 'passes' in obj.event._prefetched_objects_cache:
             return len(obj.event.passes.all())
         elif obj.event_id:
@@ -69,16 +75,22 @@ class EventSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
     def get_total_sessions(self, obj):
+        if hasattr(obj, 'annotated_total_sessions'):
+            return obj.annotated_total_sessions
         if hasattr(obj, '_prefetched_objects_cache') and 'sessions' in obj._prefetched_objects_cache:
             return len(obj.sessions.all())
         return obj.sessions.count()
 
     def get_total_enrolled(self, obj):
+        if hasattr(obj, 'annotated_total_enrolled'):
+            return obj.annotated_total_enrolled
         if hasattr(obj, '_prefetched_objects_cache') and 'passes' in obj._prefetched_objects_cache:
             return len(obj.passes.all())
         return obj.passes.count()
 
     def get_passes_sent_count(self, obj):
+        if hasattr(obj, 'annotated_passes_sent'):
+            return obj.annotated_passes_sent
         if hasattr(obj, '_prefetched_objects_cache') and 'passes' in obj._prefetched_objects_cache:
             return sum(1 for p in obj.passes.all() if p.qr_sent)
         return obj.passes.filter(qr_sent=True).count()

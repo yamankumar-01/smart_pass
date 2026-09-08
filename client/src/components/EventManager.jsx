@@ -3,8 +3,32 @@ import { Calendar, Plus, Layers, Play, CheckCircle2, FileSpreadsheet, Trash2, Cl
 import api from '../api/axios';
 
 export default function EventManager({ onSelectSessionForScan, onSelectEventForReport, onSelectEventForDispatch, onSelectEventForStudents }) {
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // Pre-hydrate from localStorage cache for instant 0ms render
+  const [events, setEvents] = useState(() => {
+    try {
+      const cached = localStorage.getItem('cached_events_list');
+      if (cached) return JSON.parse(cached);
+      const scannerCache = localStorage.getItem('smartpass_scanner_state');
+      if (scannerCache) {
+        const parsed = JSON.parse(scannerCache);
+        if (parsed.events) return parsed.events;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('cached_events_list');
+      const scannerCache = localStorage.getItem('smartpass_scanner_state');
+      return !(cached || scannerCache);
+    } catch {
+      return true;
+    }
+  });
+
   const [showEventModal, setShowEventModal] = useState(false);
   const [showDayModal, setShowDayModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -24,11 +48,15 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
     date: new Date().toISOString().split('T')[0]
   });
 
-  const loadEvents = async () => {
-    setLoading(true);
+  const loadEvents = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/events/');
-      setEvents(res.data);
+      const data = res.data || [];
+      setEvents(data);
+      try {
+        localStorage.setItem('cached_events_list', JSON.stringify(data));
+      } catch (e) {}
     } catch (err) {
       console.error('Failed to load events:', err);
     } finally {
@@ -37,7 +65,8 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
   };
 
   useEffect(() => {
-    loadEvents();
+    const hasCache = events && events.length > 0;
+    loadEvents(hasCache);
   }, []);
 
   const handleCreateEvent = async (e) => {
@@ -127,9 +156,12 @@ export default function EventManager({ onSelectSessionForScan, onSelectEventForR
       </div>
 
       {/* Events Grid */}
-      {loading ? (
-        <div className="card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-          Loading events...
+      {events.length === 0 && loading ? (
+        <div className="card" style={{ textAlign: 'center', padding: '3.5rem', color: 'var(--text-muted)' }}>
+          <div className="spin" style={{ display: 'inline-block', marginBottom: '12px', color: 'var(--primary)' }}>
+            <Layers size={32} />
+          </div>
+          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Loading events & lecture days...</div>
         </div>
       ) : events.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '3.5rem' }}>

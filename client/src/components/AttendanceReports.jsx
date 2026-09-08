@@ -6,8 +6,25 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
   const [viewMode, setViewMode] = useState('event_matrix'); // 'event_matrix' or 'single_session'
 
   // Events & Matrix State
-  const [events, setEvents] = useState([]);
-  const [selectedEventId, setSelectedEventId] = useState('');
+  const [events, setEvents] = useState(() => {
+    try {
+      const cached = localStorage.getItem('cached_events_list');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectedEventId, setSelectedEventId] = useState(() => {
+    if (selectedEventForReport) return selectedEventForReport.id;
+    try {
+      const cached = localStorage.getItem('cached_events_list');
+      if (cached) {
+        const list = JSON.parse(cached);
+        if (list.length > 0) return list[0].id;
+      }
+    } catch {}
+    return '';
+  });
   const [matrixData, setMatrixData] = useState(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [matrixSearch, setMatrixSearch] = useState('');
@@ -106,12 +123,16 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
   const loadEvents = async () => {
     try {
       const res = await api.get('/events/');
-      setEvents(res.data);
-      if (res.data.length > 0 && !selectedEventId) {
+      const data = res.data || [];
+      setEvents(data);
+      try {
+        localStorage.setItem('cached_events_list', JSON.stringify(data));
+      } catch (e) {}
+      if (data.length > 0 && !selectedEventId) {
         if (selectedEventForReport) {
           setSelectedEventId(selectedEventForReport.id);
         } else {
-          setSelectedEventId(res.data[0].id);
+          setSelectedEventId(data[0].id);
         }
       }
     } catch (err) {

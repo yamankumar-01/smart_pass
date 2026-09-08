@@ -25,6 +25,7 @@ from .serializers import (
 from .utils import generate_qr_code, send_student_qr_email, send_event_qr_email, send_batch_event_qr_emails, get_all_active_mail_senders
 
 from django.db import transaction, IntegrityError
+from django.db.models import Count, Q, Prefetch
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -591,8 +592,21 @@ def bulk_send_emails_view(request):
     })
 
 class EventViewSet(viewsets.ModelViewSet):
-    queryset = Event.objects.all().prefetch_related('sessions__records', 'passes').order_by('-id')
     serializer_class = EventSerializer
+
+    def get_queryset(self):
+        return Event.objects.all().annotate(
+            annotated_total_sessions=Count('sessions', distinct=True),
+            annotated_total_enrolled=Count('passes', distinct=True),
+            annotated_passes_sent=Count('passes', filter=Q(passes__qr_sent=True), distinct=True)
+        ).prefetch_related(
+            Prefetch(
+                'sessions',
+                queryset=AttendanceSession.objects.annotate(
+                    annotated_present_count=Count('records', filter=Q(records__status='PRESENT'), distinct=True)
+                ).order_by('date', 'id')
+            )
+        ).order_by('-id')
 
     def get_permissions(self):
         # Volunteers can view events; modifications are strictly admin

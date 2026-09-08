@@ -3,8 +3,25 @@ import { Send, QrCode, Mail, CheckCircle2, AlertCircle, RefreshCw, Sparkles, Lay
 import api from '../api/axios';
 
 export default function QrDispatch({ selectedEventForDispatch, onNavigateToStudents }) {
-  const [events, setEvents] = useState([]);
-  const [selectedEventId, setSelectedEventId] = useState('');
+  const [events, setEvents] = useState(() => {
+    try {
+      const cached = localStorage.getItem('cached_events_list');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectedEventId, setSelectedEventId] = useState(() => {
+    if (selectedEventForDispatch) return selectedEventForDispatch.id;
+    try {
+      const cached = localStorage.getItem('cached_events_list');
+      if (cached) {
+        const list = JSON.parse(cached);
+        if (list.length > 0) return list[0].id;
+      }
+    } catch {}
+    return '';
+  });
   const [passes, setPasses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState(null);
@@ -15,12 +32,16 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
   const loadEvents = async () => {
     try {
       const res = await api.get('/events/');
-      setEvents(res.data);
-      if (res.data.length > 0 && !selectedEventId) {
+      const data = res.data || [];
+      setEvents(data);
+      try {
+        localStorage.setItem('cached_events_list', JSON.stringify(data));
+      } catch (e) {}
+      if (data.length > 0 && !selectedEventId) {
         if (selectedEventForDispatch) {
           setSelectedEventId(selectedEventForDispatch.id);
         } else {
-          setSelectedEventId(res.data[0].id);
+          setSelectedEventId(data[0].id);
         }
       }
     } catch (err) {
