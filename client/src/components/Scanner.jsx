@@ -892,9 +892,9 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   {availableDays.length === 0 ? (
                     <option value="">No days added yet for this event</option>
                   ) : (
-                    availableDays.map((sess, idx) => (
+                    availableDays.map(sess => (
                       <option key={sess.id} value={sess.id}>
-                        {sess.day_label || 'Day'} ({sess.date}) {sess.topic ? `- ${sess.topic}` : ''} {idx === 0 ? '⭐ (Latest Day)' : ''} {sess.is_active ? '🟢 (Active)' : '🔴 (Closed)'}
+                        {sess.day_label || 'Day'} ({sess.date}) {sess.topic ? `- ${sess.topic}` : ''} {sess.is_active ? '🟢 (Active)' : '🔴 (Closed)'}
                       </option>
                     ))
                   )}
