@@ -72,6 +72,15 @@ const getInitialScannerCache = () => {
   }
 };
 
+// Helper to get the latest (last created) session for an event
+const getLatestSession = (sessionsList) => {
+  if (!sessionsList || sessionsList.length === 0) return null;
+  // Sort sessions by ID descending so the newest/last created day is first
+  const sorted = [...sessionsList].sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+  // Prefer the latest active session, or fallback to the newest created session
+  return sorted.find(s => s.is_active || s.status === 'ACTIVE') || sorted[0];
+};
+
 export default function Scanner({ activeSession, setActiveSession }) {
   const cachedScannerState = getInitialScannerCache();
 
@@ -221,30 +230,12 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
         let initialSess = null;
         if (initialEvent.sessions && initialEvent.sessions.length > 0) {
-          const now = new Date();
-          const year = now.getFullYear();
-          const month = String(now.getMonth() + 1).padStart(2, '0');
-          const day = String(now.getDate()).padStart(2, '0');
-          const todayStr = `${year}-${month}-${day}`;
+          // ALWAYS default to the latest created day (last created day)
+          initialSess = getLatestSession(initialEvent.sessions);
 
-          const savedSessId = sessionStorage.getItem('selected_session_id');
-          const activeSessions = initialEvent.sessions.filter(s => s.is_active || s.status === 'ACTIVE');
-
-          if (savedSessId) {
-            initialSess = initialEvent.sessions.find(s => String(s.id) === String(savedSessId));
-          }
-          if (!initialSess) {
-            initialSess = activeSessions.find(s => s.date === todayStr);
-          }
-          if (!initialSess && activeSessions.length > 0) {
-            initialSess = activeSessions[activeSessions.length - 1];
-          }
-          if (!initialSess) {
-            initialSess = initialEvent.sessions[0];
-          }
-
-          if (!activeSession || activeSession.id !== initialSess.id) {
-            setActiveSession(initialSess);
+          setActiveSession(initialSess);
+          if (initialSess) {
+            sessionStorage.setItem('selected_session_id', String(initialSess.id));
           }
 
           // Instantly populate stats from session serializer without waiting for network call
@@ -821,7 +812,10 @@ export default function Scanner({ activeSession, setActiveSession }) {
   };
 
   const currentEvent = events.find(e => String(e.id) === String(selectedEventId)) || (events.length > 0 ? events[0] : null);
-  const availableDays = currentEvent?.sessions || [];
+  // Order days so the latest created day is at the top of the dropdown
+  const availableDays = currentEvent?.sessions
+    ? [...currentEvent.sessions].sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0))
+    : [];
 
   return (
     <div className="scanner-page" style={{ maxWidth: '850px', margin: '0 auto' }}>
@@ -851,8 +845,11 @@ export default function Scanner({ activeSession, setActiveSession }) {
                     } catch (err) {}
                     const ev = events.find(ev => String(ev.id) === String(newEventId));
                     if (ev && ev.sessions && ev.sessions.length > 0) {
-                      const activeSess = ev.sessions.find(s => s.is_active || s.status === 'ACTIVE') || ev.sessions[0];
-                      setActiveSession(activeSess);
+                      const latestSess = getLatestSession(ev.sessions);
+                      setActiveSession(latestSess);
+                      if (latestSess) {
+                        sessionStorage.setItem('selected_session_id', String(latestSess.id));
+                      }
                     } else {
                       setActiveSession(null);
                     }
@@ -895,9 +892,9 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   {availableDays.length === 0 ? (
                     <option value="">No days added yet for this event</option>
                   ) : (
-                    availableDays.map(sess => (
+                    availableDays.map((sess, idx) => (
                       <option key={sess.id} value={sess.id}>
-                        {sess.day_label || 'Day'} ({sess.date}) {sess.topic ? `- ${sess.topic}` : ''} {sess.is_active ? '🟢 (Active)' : '🔴 (Closed)'}
+                        {sess.day_label || 'Day'} ({sess.date}) {sess.topic ? `- ${sess.topic}` : ''} {idx === 0 ? '⭐ (Latest Day)' : ''} {sess.is_active ? '🟢 (Active)' : '🔴 (Closed)'}
                       </option>
                     ))
                   )}
