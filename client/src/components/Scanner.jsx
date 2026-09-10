@@ -906,8 +906,8 @@ export default function Scanner({ activeSession, setActiveSession }) {
 
           {/* Right Counters: Present + Sync Health Status */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            {/* Sync Health Badge */}
-            {syncQueue.length > 0 ? (
+            {/* Sync Health Badge - only shown if there are pending offline scans */}
+            {syncQueue.length > 0 && (
               <div
                 style={{
                   background: 'rgba(234, 179, 8, 0.15)',
@@ -937,28 +937,6 @@ export default function Scanner({ activeSession, setActiveSession }) {
                 >
                   {isSyncing ? 'Syncing...' : 'Sync Now'}
                 </button>
-              </div>
-            ) : (
-              <div
-                style={{
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  borderRadius: '12px',
-                  padding: '8px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <CheckCircle2 size={16} color="var(--success)" />
-                <div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                    Sync Status
-                  </div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--success)' }}>
-                    Real-Time
-                  </div>
-                </div>
               </div>
             )}
 
