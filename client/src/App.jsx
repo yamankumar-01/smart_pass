@@ -22,20 +22,53 @@ export default function App() {
     return (user === 'adminpass' || user === 'admin') ? 'admin' : 'volunteer';
   });
   
-  // Persist active tab across browser reloads with role-protection
+  // Persist active tab across browser reloads with role-protection & clean HTML5 paths (No '#')
   const validTabs = ['scanner', 'events', 'students', 'dispatch', 'reports', 'emails', 'settings'];
+
+  const normalizeTab = (raw) => {
+    if (!raw) return 'scanner';
+    const clean = String(raw).toLowerCase().replace(/^[#/]+/, '').split('?')[0].split('#')[0];
+    if (clean === 'student' || clean === 'students') return 'students';
+    if (clean === 'event' || clean === 'events') return 'events';
+    if (clean === 'report' || clean === 'reports') return 'reports';
+    if (clean === 'email' || clean === 'emails') return 'emails';
+    if (clean === 'setting' || clean === 'settings') return 'settings';
+    if (clean === 'dispatch') return 'dispatch';
+    if (clean === 'scanner') return 'scanner';
+    return validTabs.includes(clean) ? clean : 'scanner';
+  };
+
   const getInitialTab = () => {
     const savedRole = sessionStorage.getItem('role') || ((sessionStorage.getItem('username') || '').toLowerCase() === 'adminpass' ? 'admin' : 'volunteer');
-    const hash = window.location.hash.replace('#', '');
-    if (validTabs.includes(hash)) {
-      if (savedRole !== 'admin' && hash !== 'scanner') return 'scanner';
-      return hash;
+
+    // 1. Check clean pathname first (e.g. /students or /student)
+    const pathCandidate = window.location.pathname.replace(/^\/+/, '');
+    if (pathCandidate) {
+      const norm = normalizeTab(pathCandidate);
+      if (norm) {
+        if (savedRole !== 'admin' && norm !== 'scanner') return 'scanner';
+        return norm;
+      }
     }
+
+    // 2. Check legacy hash fallback (e.g. #students)
+    const hashCandidate = window.location.hash.replace(/^#+/, '');
+    if (hashCandidate) {
+      const norm = normalizeTab(hashCandidate);
+      if (norm) {
+        if (savedRole !== 'admin' && norm !== 'scanner') return 'scanner';
+        return norm;
+      }
+    }
+
+    // 3. Check saved session
     const saved = sessionStorage.getItem('activeTab');
-    if (saved && validTabs.includes(saved)) {
-      if (savedRole !== 'admin' && saved !== 'scanner') return 'scanner';
-      return saved;
+    if (saved) {
+      const norm = normalizeTab(saved);
+      if (savedRole !== 'admin' && norm !== 'scanner') return 'scanner';
+      return norm;
     }
+
     return 'scanner';
   };
 
@@ -67,16 +100,20 @@ export default function App() {
   const [selectedEventForStudents, setSelectedEventForStudents] = useState(null);
 
   const setActiveTab = (tab) => {
+    const target = normalizeTab(tab);
     // If volunteer, only scanner is allowed
-    if (userRole !== 'admin' && tab !== 'scanner') {
-      setActiveTabState('scanner');
-      sessionStorage.setItem('activeTab', 'scanner');
-      window.location.hash = 'scanner';
-      return;
-    }
-    setActiveTabState(tab);
-    sessionStorage.setItem('activeTab', tab);
-    window.location.hash = tab;
+    const finalTab = (userRole !== 'admin' && target !== 'scanner') ? 'scanner' : target;
+
+    setActiveTabState(finalTab);
+    sessionStorage.setItem('activeTab', finalTab);
+
+    // Clean URL without '#' (uses standard clean paths /students, /scanner, etc.)
+    try {
+      const newPath = `/${finalTab}`;
+      if (window.location.pathname !== newPath || window.location.hash) {
+        window.history.pushState({ tab: finalTab }, '', newPath);
+      }
+    } catch (e) {}
   };
 
   useEffect(() => {
@@ -86,21 +123,30 @@ export default function App() {
     localStorage.removeItem('username');
     localStorage.removeItem('role');
 
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (validTabs.includes(hash)) {
-        if (userRole !== 'admin' && hash !== 'scanner') {
-          setActiveTabState('scanner');
-          sessionStorage.setItem('activeTab', 'scanner');
-          return;
-        }
-        setActiveTabState(hash);
-        sessionStorage.setItem('activeTab', hash);
-      }
+    // On mount, if URL has legacy hash (e.g. #students or #student), replace it with clean /students
+    if (window.location.hash) {
+      const norm = normalizeTab(window.location.hash);
+      const cleanPath = `/${norm}`;
+      try {
+        window.history.replaceState({ tab: norm }, '', cleanPath);
+      } catch (e) {}
+    }
+
+    const handlePopState = () => {
+      const pathCandidate = window.location.pathname.replace(/^\/+/, '');
+      const hashCandidate = window.location.hash.replace(/^#+/, '');
+      const tab = normalizeTab(pathCandidate || hashCandidate);
+      const finalTab = (userRole !== 'admin' && tab !== 'scanner') ? 'scanner' : tab;
+      setActiveTabState(finalTab);
+      sessionStorage.setItem('activeTab', finalTab);
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
   }, [userRole]);
 
   // Eager background prefetch of events to keep localStorage cache warm for instant 0ms tab transitions
@@ -128,8 +174,18 @@ export default function App() {
     setIsAuthenticated(false);
     setUserRole('volunteer');
     setActiveTabState('scanner');
-    window.location.hash = 'scanner';
+    try {
+      window.history.pushState(null, '', '/scanner');
+    } catch (e) {}
   };
+
+  useEffect(() => {
+    const handleAuthLogout = () => {
+      handleLogout();
+    };
+    window.addEventListener('smartpass:auth:logout', handleAuthLogout);
+    return () => window.removeEventListener('smartpass:auth:logout', handleAuthLogout);
+  }, []);
 
   const handleLoginSuccess = (detectedRole) => {
     const finalRole = detectedRole || (sessionStorage.getItem('username') === 'adminpass' || sessionStorage.getItem('username') === 'admin' ? 'admin' : 'volunteer');
