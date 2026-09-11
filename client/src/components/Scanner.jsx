@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Camera, CameraOff, Play, Square, RefreshCw, UploadCloud, CheckCircle2, AlertTriangle, XCircle, Users, Keyboard, Sparkles, Zap, ZapOff, ZoomIn } from 'lucide-react';
+import { Camera, CameraOff, Play, Square, RefreshCw, UploadCloud, CheckCircle2, AlertTriangle, XCircle, Users, Sparkles, Zap, ZapOff, ZoomIn } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import api from '../api/axios';
 
@@ -94,7 +94,6 @@ export default function Scanner({ activeSession, setActiveSession }) {
   });
 
   const [scanResult, setScanResult] = useState(null);
-  const [manualToken, setManualToken] = useState('');
   
   // Instant stats from activeSession or cache
   const [sessionStats, setSessionStats] = useState(() => {
@@ -803,14 +802,6 @@ export default function Scanner({ activeSession, setActiveSession }) {
     }
   };
 
-  const handleManualSubmit = (e) => {
-    e.preventDefault();
-    if (manualToken.trim()) {
-      processTokenScan(manualToken);
-      setManualToken('');
-    }
-  };
-
   const currentEvent = events.find(e => String(e.id) === String(selectedEventId)) || (events.length > 0 ? events[0] : null);
   // Order days so the latest created day is at the top of the dropdown
   const availableDays = currentEvent?.sessions
@@ -1355,23 +1346,6 @@ export default function Scanner({ activeSession, setActiveSession }) {
             </div>
           </div>
         )}
-
-        {/* Manual UUID Input Fallback */}
-        <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
-          <form onSubmit={handleManualSubmit} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Or type/paste Student Token UUID..."
-              value={manualToken}
-              onChange={(e) => setManualToken(e.target.value)}
-              style={{ fontSize: '0.85rem', flex: '1 1 220px' }}
-            />
-            <button type="submit" className="btn btn-secondary" disabled={loading} style={{ whiteSpace: 'nowrap', flex: '0 0 auto' }}>
-              <Keyboard size={15} /> Verify Token
-            </button>
-          </form>
-        </div>
       </div>
     </div>
   );
