@@ -1,21 +1,8 @@
 # ==========================================
-# Multi-Stage Production Dockerfile
-# Stage 1: Build the React Vite Frontend
+# Production Python Django Backend Container
+# (Frontend is hosted separately on Vercel)
 # ==========================================
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /app/client
-
-COPY client/package*.json ./
-RUN npm install
-
-COPY client/ ./
-RUN npm run build
-
-# ==========================================
-# Stage 2: Production Python Django Container
-# ==========================================
-FROM python:3.11-slim AS backend-runner
+FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -36,9 +23,6 @@ RUN pip install --no-cache-dir -r ./backend/requirements.txt
 # Copy Django backend application
 COPY backend/ ./backend/
 
-# Copy compiled React frontend assets from Stage 1
-COPY --from=frontend-builder /app/client/dist ./client/dist
-
 # Copy entrypoint startup script
 COPY start.sh ./
 RUN chmod +x ./start.sh
@@ -46,3 +30,4 @@ RUN chmod +x ./start.sh
 EXPOSE 8000
 
 CMD ["./start.sh"]
+

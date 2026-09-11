@@ -1,7 +1,6 @@
 .git
 .github
-client/node_modules
-client/dist
+client/
 backend/staticfiles
 backend/media
 backend/db.sqlite3

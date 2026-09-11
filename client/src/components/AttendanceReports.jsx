@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Download, Users, CheckCircle2, XCircle, Percent, Search, Lock, Layers, Calendar, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import api from '../api/axios';
 
@@ -50,6 +51,16 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
 
   // Toggle attendance in multi-day matrix view
   const toggleMatrixAttendance = async (sessionId, studentId, studentName) => {
+    const targetRow = matrixData?.matrix?.find(r => r.student.id === studentId);
+    const currentStatus = targetRow?.attendance?.[sessionId] || 'ABSENT';
+    const nextStatus = currentStatus === 'PRESENT' ? 'ABSENT' : 'PRESENT';
+    const sessionObj = matrixData?.sessions?.find(s => s.id === sessionId);
+    const dayLabel = sessionObj?.day_label || 'this day';
+
+    if (!window.confirm(`Are you sure you want to change attendance for "${studentName}" to ${nextStatus} for ${dayLabel}?`)) {
+      return;
+    }
+
     const key = `${sessionId}_${studentId}`;
     setTogglingId(key);
     try {
@@ -118,6 +129,10 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
   // Toggle in Single Session view
   const toggleSingleSessionAttendance = async (studentId, studentName, currentStatus) => {
     if (!selectedSessionId) return;
+    const nextStatus = currentStatus === 'present' ? 'ABSENT' : 'PRESENT';
+    if (!window.confirm(`Are you sure you want to change attendance for "${studentName}" to ${nextStatus}?`)) {
+      return;
+    }
     try {
       await api.post('/attendance/toggle/', {
         session_id: selectedSessionId,
@@ -357,6 +372,19 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
     );
   }) : [];
 
+  const matrixContainerRef = useRef(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredMatrix.length,
+    getScrollElement: () => matrixContainerRef.current,
+    estimateSize: () => 53,
+    overscan: 10,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
+  const paddingBottom = virtualRows.length > 0 ? totalSize - virtualRows[virtualRows.length - 1].end : 0;
+
   const filteredSingleList = reportData ? (
     activeTab === 'present' ? reportData.present : reportData.absent
   ).filter(s => 
@@ -530,10 +558,14 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                 </div>
               </div>
 
-              {/* Matrix Table */}
-              <div className="table-container" style={{ border: 'none', overflowX: 'auto' }}>
+              {/* Matrix Table with Virtualization */}
+              <div
+                ref={matrixContainerRef}
+                className="table-container"
+                style={{ border: 'none', overflowX: 'auto', maxHeight: '680px', overflowY: 'auto' }}
+              >
                 <table className="data-table">
-                  <thead>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 5, backgroundColor: 'var(--table-th-bg)' }}>
                     <tr>
                       <th style={{ minWidth: '160px' }}>Student Name</th>
                       <th>Email Address</th>
@@ -558,61 +590,77 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
                         </td>
                       </tr>
                     ) : (
-                      filteredMatrix.map((row) => (
-                        <tr key={row.student.id}>
-                          <td><strong>{row.student.name}</strong></td>
-                          <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{row.student.email}</td>
-                          <td>
-                            <span className="badge badge-info" style={{ marginRight: '6px' }}>{row.student.branch}</span>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Y{row.student.year}</span>
-                          </td>
-
-                          {/* Day Columns (Interactive Toggle) */}
-                          {matrixData.sessions.map((sess) => {
-                            const isPresent = row.attendance[sess.id] === 'PRESENT';
-                            const isToggling = togglingId === `${sess.id}_${row.student.id}`;
-                            return (
-                              <td key={sess.id} style={{ textAlign: 'center' }}>
-                                <button
-                                  type="button"
-                                  disabled={isToggling}
-                                  onClick={() => toggleMatrixAttendance(sess.id, row.student.id, row.student.name)}
-                                  className={`badge badge-${isPresent ? 'success' : 'danger'}`}
-                                  style={{
-                                    fontSize: '0.75rem',
-                                    padding: '4px 10px',
-                                    cursor: 'pointer',
-                                    border: '1px solid transparent',
-                                    transition: 'all 0.15s ease',
-                                    opacity: isToggling ? 0.6 : 1,
-                                    outline: 'none'
-                                  }}
-                                  title="Click to toggle Present / Absent"
-                                >
-                                  {isToggling ? '⏳ ...' : (isPresent ? '✅ PRESENT' : '❌ ABSENT')}
-                                </button>
+                      <>
+                        {paddingTop > 0 && (
+                          <tr>
+                            <td style={{ height: `${paddingTop}px`, padding: 0, border: 'none' }} colSpan={5 + matrixData.sessions.length} />
+                          </tr>
+                        )}
+                        {virtualRows.map((virtualRow) => {
+                          const row = filteredMatrix[virtualRow.index];
+                          if (!row) return null;
+                          return (
+                            <tr key={row.student.id} ref={rowVirtualizer.measureElement} data-index={virtualRow.index}>
+                              <td><strong>{row.student.name}</strong></td>
+                              <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{row.student.email}</td>
+                              <td>
+                                <span className="badge badge-info" style={{ marginRight: '6px' }}>{row.student.branch}</span>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Y{row.student.year}</span>
                               </td>
-                            );
-                          })}
 
-                          {/* Summary Stats */}
-                          <td style={{ textAlign: 'center', fontWeight: 700 }}>
-                            {row.total_present} / {row.total_days}
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span
-                              className="badge"
-                              style={{
-                                background: row.percentage >= 75 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                                color: row.percentage >= 75 ? 'var(--success)' : '#ef4444',
-                                fontWeight: 700
-                              }}
-                            >
-                              {row.percentage}%
-                            </span>
-                          </td>
-                        </tr>
-                      ))
+                              {/* Day Columns (Interactive Toggle) */}
+                              {matrixData.sessions.map((sess) => {
+                                const isPresent = row.attendance[sess.id] === 'PRESENT';
+                                const isToggling = togglingId === `${sess.id}_${row.student.id}`;
+                                return (
+                                  <td key={sess.id} style={{ textAlign: 'center' }}>
+                                    <button
+                                      type="button"
+                                      disabled={isToggling}
+                                      onClick={() => toggleMatrixAttendance(sess.id, row.student.id, row.student.name)}
+                                      className={`badge badge-${isPresent ? 'success' : 'danger'}`}
+                                      style={{
+                                        fontSize: '0.75rem',
+                                        padding: '4px 10px',
+                                        cursor: 'pointer',
+                                        border: '1px solid transparent',
+                                        transition: 'all 0.15s ease',
+                                        opacity: isToggling ? 0.6 : 1,
+                                        outline: 'none'
+                                      }}
+                                      title="Click to toggle Present / Absent"
+                                    >
+                                      {isToggling ? '⏳ ...' : (isPresent ? '✅ PRESENT' : '❌ ABSENT')}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+
+                              {/* Summary Stats */}
+                              <td style={{ textAlign: 'center', fontWeight: 700 }}>
+                                {row.total_present} / {row.total_days}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <span
+                                  className="badge"
+                                  style={{
+                                    background: row.percentage >= 75 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                                    color: row.percentage >= 75 ? 'var(--success)' : '#ef4444',
+                                    fontWeight: 700
+                                  }}
+                                >
+                                  {row.percentage}%
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {paddingBottom > 0 && (
+                          <tr>
+                            <td style={{ height: `${paddingBottom}px`, padding: 0, border: 'none' }} colSpan={5 + matrixData.sessions.length} />
+                          </tr>
+                        )}
+                      </>
                     )}
                   </tbody>
                 </table>
@@ -762,9 +810,9 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
               </div>
             </div>
 
-            <div className="table-container" style={{ border: 'none' }}>
+            <div className="table-container" style={{ border: 'none', overflowX: 'auto', maxHeight: '680px', overflowY: 'auto' }}>
               <table className="data-table">
-                <thead>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 5, backgroundColor: 'var(--table-th-bg)' }}>
                   <tr>
                     <th>Student Name</th>
                     <th>Email Address</th>

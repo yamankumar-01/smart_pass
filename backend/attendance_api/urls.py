@@ -23,7 +23,8 @@ from .views import (
     toggle_smtp_account_view,
     custom_token_obtain_pair_view,
     toggle_attendance_view,
-    bulk_mark_present_view
+    bulk_mark_present_view,
+    task_status_view
 )
 
 router = DefaultRouter()
@@ -68,6 +69,9 @@ urlpatterns = [
     path('settings/smtp/<int:account_id>/toggle', toggle_smtp_account_view, name='toggle_smtp_account'),
     path('settings/test-email/', test_send_email_view, name='test_send_email_slash'),
     path('settings/test-email', test_send_email_view, name='test_send_email'),
+
+    path('tasks/<str:task_id>/', task_status_view, name='task_status_slash'),
+    path('tasks/<str:task_id>', task_status_view, name='task_status'),
 
     path('seed-samples', seed_samples_view, name='seed_samples'),
 

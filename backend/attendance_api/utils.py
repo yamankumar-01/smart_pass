@@ -2,6 +2,7 @@ import io
 import base64
 import os
 import json
+import time
 import urllib.request
 import urllib.error
 import qrcode
@@ -11,6 +12,26 @@ from django.core.files.base import ContentFile
 from django.core.mail import EmailMultiAlternatives, get_connection
 from django.conf import settings
 from .models import EmailLog, SMTPSetting
+
+def execute_with_backoff(send_func, max_retries=3, backoff_seconds=(2, 6, 15)):
+    """
+    Executes an email send function with exponential backoff on transient network or API errors.
+    send_func is expected to return (bool: ok, str: res_info).
+    """
+    last_info = ""
+    for attempt in range(max_retries):
+        try:
+            ok, info = send_func()
+            if ok:
+                return True, info
+            last_info = info
+        except Exception as err:
+            last_info = str(err)
+
+        if attempt < max_retries - 1:
+            time.sleep(backoff_seconds[attempt] if attempt < len(backoff_seconds) else backoff_seconds[-1])
+
+    return False, f"Failed after {max_retries} attempts: {last_info}"
 
 def generate_qr_code(unique_token):
     """
@@ -349,16 +370,18 @@ def send_student_qr_email(student, conn=None, from_addr=None, specific_sender=No
     error_msg = ''
 
     if provider == 'brevo' and sender_cfg.get('brevo_key'):
-        ok, res_info = send_email_via_brevo(
-            api_key=sender_cfg['brevo_key'],
-            from_name=sender_cfg.get('from_name', 'Aarambh Attendance System'),
-            from_email=sender_cfg.get('from_email', sender_cfg.get('user', '')),
-            to_email=student.email,
-            subject=subject,
-            html_body=html_body,
-            qr_raw_bytes=qr_raw_bytes,
-            qr_filename=f"qr_pass_{token_str[:8]}.png"
-        )
+        def _send_brevo():
+            return send_email_via_brevo(
+                api_key=sender_cfg['brevo_key'],
+                from_name=sender_cfg.get('from_name', 'Aarambh Attendance System'),
+                from_email=sender_cfg.get('from_email', sender_cfg.get('user', '')),
+                to_email=student.email,
+                subject=subject,
+                html_body=html_body,
+                qr_raw_bytes=qr_raw_bytes,
+                qr_filename=f"qr_pass_{token_str[:8]}.png"
+            )
+        ok, res_info = execute_with_backoff(_send_brevo)
         if ok:
             status = 'SENT'
             if student.pk:
@@ -368,15 +391,17 @@ def send_student_qr_email(student, conn=None, from_addr=None, specific_sender=No
             status = 'FAILED'
             error_msg = res_info
     elif provider == 'resend' and sender_cfg.get('resend_key'):
-        ok, res_info = send_email_via_resend(
-            api_key=sender_cfg['resend_key'],
-            from_addr=from_addr,
-            to_email=student.email,
-            subject=subject,
-            html_body=html_body,
-            qr_raw_bytes=qr_raw_bytes,
-            qr_filename=f"qr_pass_{token_str[:8]}.png"
-        )
+        def _send_resend():
+            return send_email_via_resend(
+                api_key=sender_cfg['resend_key'],
+                from_addr=from_addr,
+                to_email=student.email,
+                subject=subject,
+                html_body=html_body,
+                qr_raw_bytes=qr_raw_bytes,
+                qr_filename=f"qr_pass_{token_str[:8]}.png"
+            )
+        ok, res_info = execute_with_backoff(_send_resend)
         if ok:
             status = 'SENT'
             if student.pk:
@@ -386,14 +411,14 @@ def send_student_qr_email(student, conn=None, from_addr=None, specific_sender=No
             status = 'FAILED'
             error_msg = res_info
     else:
-        try:
-            conn = conn or sender_cfg.get('conn')
+        def _send_smtp():
+            conn_obj = conn or sender_cfg.get('conn')
             msg = EmailMultiAlternatives(
                 subject=subject,
                 body=f"Hello {student.name}, show this QR code at the attendance scanner. Your pass token is {token_str}",
                 from_email=from_addr,
                 to=[student.email],
-                connection=conn
+                connection=conn_obj
             )
             msg.attach_alternative(html_body, "text/html")
 
@@ -403,14 +428,18 @@ def send_student_qr_email(student, conn=None, from_addr=None, specific_sender=No
             msg.attach(mime_img)
 
             msg.send(fail_silently=False)
+            return True, "SENT"
 
+        ok, res_info = execute_with_backoff(_send_smtp)
+        if ok:
+            status = 'SENT'
             if student.pk:
                 student.qr_sent = True
                 student.save(update_fields=['qr_sent'])
-        except Exception as e:
-            error_msg = str(e)
-            print(f"Email send error logged for {student.email}: {error_msg}")
+        else:
             status = 'FAILED'
+            error_msg = res_info
+            print(f"Email send error logged for {student.email}: {error_msg}")
 
     # Replace cid with data URL for browser inbox preview
     web_inbox_html = html_body.replace('cid:qr_code_image', qr_data_url)
@@ -731,16 +760,54 @@ def send_batch_event_qr_emails(passes):
                     status='FAILED',
                     error_message=res_info
                 )
+        if provider == 'brevo' and sender_cfg.get('brevo_key'):
+            def _send_brevo_item():
+                return send_email_via_brevo(
+                    api_key=sender_cfg['brevo_key'],
+                    from_name=sender_cfg.get('from_name', 'Aarambh Attendance System'),
+                    from_email=sender_cfg.get('from_email', sender_cfg.get('user', '')),
+                    to_email=student.email,
+                    subject=subject,
+                    html_body=html_body,
+                    qr_raw_bytes=qr_raw_bytes,
+                    qr_filename=f"event_pass_{event.id}_{student.id}.png"
+                )
+            ok, res_info = execute_with_backoff(_send_brevo_item)
+            if ok:
+                event_pass.qr_sent = True
+                event_pass.save(update_fields=['qr_sent'])
+                EmailLog.objects.create(
+                    student=student,
+                    student_name=student.name,
+                    email=student.email,
+                    subject=subject,
+                    body_html=web_inbox_html,
+                    qr_token=token_str,
+                    status='SENT'
+                )
+            else:
+                EmailLog.objects.create(
+                    student=student,
+                    student_name=student.name,
+                    email=student.email,
+                    subject=subject,
+                    body_html=web_inbox_html,
+                    qr_token=token_str,
+                    status='FAILED',
+                    error_message=res_info
+                )
         elif provider == 'resend' and sender_cfg.get('resend_key'):
-            ok, res_info = send_email_via_resend(
-                api_key=sender_cfg['resend_key'],
-                from_addr=from_addr,
-                to_email=student.email,
-                subject=subject,
-                html_body=html_body,
-                qr_raw_bytes=qr_raw_bytes,
-                qr_filename=f"event_pass_{event.id}_{student.id}.png"
-            )
+            def _send_resend_item():
+                return send_email_via_resend(
+                    api_key=sender_cfg['resend_key'],
+                    from_addr=from_addr,
+                    to_email=student.email,
+                    subject=subject,
+                    html_body=html_body,
+                    qr_raw_bytes=qr_raw_bytes,
+                    qr_filename=f"event_pass_{event.id}_{student.id}.png"
+                )
+            ok, res_info = execute_with_backoff(_send_resend_item)
             if ok:
                 event_pass.qr_sent = True
                 event_pass.save(update_fields=['qr_sent'])
@@ -765,14 +832,14 @@ def send_batch_event_qr_emails(passes):
                     error_message=res_info
                 )
         else:
-            try:
-                conn = sender_cfg.get('conn')
+            def _send_smtp_item():
+                conn_obj = sender_cfg.get('conn')
                 single_msg = EmailMultiAlternatives(
                     subject=subject,
                     body=f"Pass for {event_pass.event.title}",
                     from_email=from_addr,
                     to=[student.email],
-                    connection=conn
+                    connection=conn_obj
                 )
                 single_msg.attach_alternative(html_body, "text/html")
                 mime_img = MIMEImage(qr_raw_bytes)
@@ -780,7 +847,10 @@ def send_batch_event_qr_emails(passes):
                 mime_img.add_header('Content-Disposition', 'inline', filename=f"event_pass_{event.id}_{student.id}.png")
                 single_msg.attach(mime_img)
                 single_msg.send(fail_silently=False)
+                return True, "SENT"
 
+            ok, res_info = execute_with_backoff(_send_smtp_item)
+            if ok:
                 event_pass.qr_sent = True
                 event_pass.save(update_fields=['qr_sent'])
                 EmailLog.objects.create(
@@ -792,7 +862,7 @@ def send_batch_event_qr_emails(passes):
                     qr_token=token_str,
                     status='SENT'
                 )
-            except Exception as e_indiv:
+            else:
                 EmailLog.objects.create(
                     student=student,
                     student_name=student.name,
@@ -801,7 +871,7 @@ def send_batch_event_qr_emails(passes):
                     body_html=web_inbox_html,
                     qr_token=token_str,
                     status='FAILED',
-                    error_message=str(e_indiv)
+                    error_message=res_info
                 )
 
     from concurrent.futures import ThreadPoolExecutor

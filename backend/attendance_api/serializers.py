@@ -53,13 +53,13 @@ class AttendanceSessionSerializer(serializers.ModelSerializer):
         return obj.records.filter(status='PRESENT').count()
 
     def get_total_students(self, obj):
-        if hasattr(obj, 'annotated_total_students'):
-            return obj.annotated_total_students
-        if obj.event_id and hasattr(obj.event, 'annotated_total_enrolled'):
-            return obj.event.annotated_total_enrolled
-        if obj.event_id and hasattr(obj.event, '_prefetched_objects_cache') and 'passes' in obj.event._prefetched_objects_cache:
-            return len(obj.event.passes.all())
-        elif obj.event_id:
+        if obj.event_id:
+            if hasattr(obj, 'annotated_total_students'):
+                return obj.annotated_total_students
+            if hasattr(obj.event, 'annotated_total_enrolled'):
+                return obj.event.annotated_total_enrolled
+            if hasattr(obj.event, '_prefetched_objects_cache') and 'passes' in obj.event._prefetched_objects_cache:
+                return len(obj.event.passes.all())
             return obj.event.passes.count()
         return getattr(self.context.get('request'), '_cached_student_count', None) or Student.objects.count()
 

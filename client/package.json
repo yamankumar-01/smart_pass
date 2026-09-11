@@ -9,8 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "canvas-confetti": "^1.9.3",
+    "@tanstack/react-virtual": "^3.14.11",
     "axios": "^1.7.2",
+    "canvas-confetti": "^1.9.3",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.395.0",
     "react": "^18.3.1",

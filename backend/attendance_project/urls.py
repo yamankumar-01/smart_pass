@@ -5,18 +5,30 @@ from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 from django.views.static import serve
-from django.http import HttpResponse, FileResponse
+from django.shortcuts import redirect
+from django.http import HttpResponse, FileResponse, JsonResponse
 
-FRONTEND_DIST = Path(settings.BASE_DIR).parent / 'client' / 'dist'
+def backend_root_redirect_view(request, path=''):
+    """
+    Since the frontend is hosted on Vercel (https://smartpass-orpin.vercel.app),
+    browser requests to root or frontend paths are cleanly redirected to Vercel.
+    API/Curl/JSON requests receive a service status response.
+    """
+    accept = request.headers.get('accept', '')
+    if 'text/html' in accept:
+        clean_path = path.lstrip('/')
+        target_url = f"https://smartpass-orpin.vercel.app/{clean_path}" if clean_path else "https://smartpass-orpin.vercel.app/"
+        return redirect(target_url)
 
-def serve_spa_index(request):
-    dist_index = FRONTEND_DIST / 'index.html'
-    if dist_index.exists():
-        return FileResponse(open(dist_index, 'rb'), content_type='text/html')
-    return HttpResponse(
-        "<h2>Smart Attendance QR System API is Live!</h2><p>Frontend assets are being built.</p>",
-        content_type="text/html"
-    )
+    return JsonResponse({
+        "status": "online",
+        "service": "SmartPass Attendance API",
+        "frontend": "https://smartpass-orpin.vercel.app",
+        "endpoints": {
+            "api": "/api/",
+            "admin": "/admin/"
+        }
+    })
 
 def serve_dynamic_qr_view(request, path):
     """
@@ -56,14 +68,7 @@ urlpatterns = [
 # Serve other media files if any
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-# Explicitly serve Vite static bundle assets (/assets/...)
+# Catch-all: Route browser navigation to Vercel frontend, and return API status for clients
 urlpatterns += [
-    re_path(r'^assets/(?P<path>.*)$', serve, {
-        'document_root': FRONTEND_DIST / 'assets',
-    }),
-]
-
-# Catch-all route to serve the Single Page Application (React Vite Frontend)
-urlpatterns += [
-    re_path(r'^(?!api|admin|media|static|assets).*$', serve_spa_index, name='spa_index'),
+    re_path(r'^(?!api|admin|media|static)(?P<path>.*)$', backend_root_redirect_view, name='backend_root_redirect'),
 ]

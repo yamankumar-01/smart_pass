@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_DIST_DIR = BASE_DIR.parent / 'client' / 'dist'
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-qr-attendance-secret-key-2026-super-secure')
 
@@ -73,7 +72,6 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [
-            FRONTEND_DIST_DIR,
             BASE_DIR / 'templates'
         ],
         'APP_DIRS': True,
@@ -90,8 +88,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'attendance_project.wsgi.application'
 
-# Database Configuration (supports PostgreSQL DATABASE_URL or SQLite)
+# Database Configuration (enforces PostgreSQL in production, allows SQLite in local dev)
+from django.core.exceptions import ImproperlyConfigured
+
 DATABASE_URL = os.getenv('DATABASE_URL')
+is_production = not DEBUG or os.getenv('ENVIRONMENT', '').lower() in ('production', 'prod')
 
 if DATABASE_URL:
     try:
@@ -106,6 +107,8 @@ if DATABASE_URL:
         db_config['OPTIONS']['connect_timeout'] = 5
         DATABASES = {'default': db_config}
     except ImportError:
+        if is_production:
+            raise ImproperlyConfigured("dj-database-url is required to parse DATABASE_URL in production.")
         DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.sqlite3',
@@ -124,6 +127,11 @@ elif 'postgresql' in os.getenv('DB_ENGINE', ''):
         }
     }
 else:
+    if is_production:
+        raise ImproperlyConfigured(
+            "DATABASE_URL (or valid PostgreSQL configuration) is strictly required when running in production (DEBUG=False). "
+            "SQLite cannot be used in production due to concurrent multi-scanner write lock bottlenecks."
+        )
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -147,8 +155,6 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 STATICFILES_DIRS = []
-if (FRONTEND_DIST_DIR / 'assets').exists():
-    STATICFILES_DIRS.append(FRONTEND_DIST_DIR / 'assets')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'

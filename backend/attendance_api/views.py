@@ -489,7 +489,8 @@ def bulk_upload_csv_view(request):
         ))
 
     if to_create:
-        Student.objects.bulk_create(to_create)
+        with transaction.atomic():
+            Student.objects.bulk_create(to_create, ignore_conflicts=True)
 
     event_id = request.data.get('event_id') or request.POST.get('event_id')
     event_obj = Event.objects.filter(id=event_id).first() if event_id else None
@@ -521,21 +522,63 @@ def bulk_upload_csv_view(request):
         'eventTitle': event_obj.title if event_obj else None
     })
 
+TASK_REGISTRY = {}
+
+@api_view(['GET'])
+@permission_classes([IsAdminUserRole])
+def task_status_view(request, task_id):
+    info = TASK_REGISTRY.get(str(task_id))
+    if not info:
+        return Response({'error': 'Task not found or expired.'}, status=status.HTTP_404_NOT_FOUND)
+    return Response(info)
+
 @api_view(['POST'])
 @permission_classes([IsAdminUserRole])
 def bulk_generate_qr_view(request):
-    students_without_qr = Student.objects.filter(qr_code_image='') | Student.objects.filter(qr_code_image=None)
-    generated_count = 0
+    import threading
+    task_id = str(uuid.uuid4())
+    students_without_qr = list(Student.objects.filter(qr_code_image='') | Student.objects.filter(qr_code_image=None))
+    total = len(students_without_qr)
 
-    for student in students_without_qr:
-        file_content, _ = generate_qr_code(student.unique_token)
-        student.qr_code_image.save(f"qr_{student.unique_token}.png", file_content, save=True)
-        generated_count += 1
+    TASK_REGISTRY[task_id] = {
+        'task_id': task_id,
+        'status': 'processing',
+        'progress': 0,
+        'total': total,
+        'generated_count': 0,
+        'message': f'Generating QR codes for {total} students in background...'
+    }
+
+    def _worker():
+        generated_count = 0
+        try:
+            for s in students_without_qr:
+                file_content, _ = generate_qr_code(s.unique_token)
+                s.qr_code_image.save(f"qr_{s.unique_token}.png", file_content, save=True)
+                generated_count += 1
+                TASK_REGISTRY[task_id]['generated_count'] = generated_count
+                TASK_REGISTRY[task_id]['progress'] = round((generated_count / total) * 100) if total > 0 else 100
+
+            TASK_REGISTRY[task_id]['status'] = 'completed'
+            TASK_REGISTRY[task_id]['progress'] = 100
+            TASK_REGISTRY[task_id]['message'] = f'Successfully generated QR codes for {generated_count} students.'
+        except Exception as e:
+            TASK_REGISTRY[task_id]['status'] = 'failed'
+            TASK_REGISTRY[task_id]['error'] = str(e)
+
+    if total > 0:
+        threading.Thread(target=_worker, daemon=True).start()
+    else:
+        TASK_REGISTRY[task_id]['status'] = 'completed'
+        TASK_REGISTRY[task_id]['progress'] = 100
+        TASK_REGISTRY[task_id]['message'] = 'All students already have QR codes generated.'
 
     return Response({
-        'message': f'Generated QR codes for {generated_count} students.',
-        'generated_count': generated_count
-    })
+        'task_id': task_id,
+        'status': 'processing' if total > 0 else 'completed',
+        'total': total,
+        'message': f'QR generation for {total} students initiated in background.'
+    }, status=status.HTTP_202_ACCEPTED)
 
 @api_view(['POST'])
 @permission_classes([IsAdminUserRole])
@@ -969,8 +1012,13 @@ class EventViewSet(viewsets.ModelViewSet):
         })
 
 class AttendanceSessionViewSet(viewsets.ModelViewSet):
-    queryset = AttendanceSession.objects.all().select_related('event').prefetch_related('records').order_by('event_id', 'date', 'id')
     serializer_class = AttendanceSessionSerializer
+
+    def get_queryset(self):
+        return AttendanceSession.objects.all().select_related('event').annotate(
+            annotated_present_count=Count('records', filter=Q(records__status='PRESENT'), distinct=True),
+            annotated_total_students=Count('event__passes', distinct=True)
+        ).order_by('event_id', 'date', 'id')
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:
@@ -1220,7 +1268,10 @@ def export_attendance_csv_view(request, session_id):
         return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     present_dict = {r.student_id: r.timestamp for r in AttendanceRecord.objects.filter(session=session_obj, status='PRESENT')}
-    students = Student.objects.all().order_by('name')
+    if session_obj.event:
+        students = Student.objects.filter(event_passes__event=session_obj.event).order_by('name').distinct()
+    else:
+        students = Student.objects.all().order_by('name')
 
     response = HttpResponse(content_type='text/csv')
     filename = f"Attendance_{session_obj.title.replace(' ', '_')}_{session_obj.date}.csv"
@@ -1511,7 +1562,7 @@ def seed_samples_view(request):
     })
 
 @api_view(['POST'])
-@permission_classes([IsVolunteerOrAdmin])
+@permission_classes([IsAdminUserRole])
 def toggle_attendance_view(request):
     """
     Toggles attendance for a student in a specific session.

@@ -1,6 +1,63 @@
 import uuid
+import base64
+import hashlib
+from cryptography.fernet import Fernet, InvalidToken
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
+
+def get_fernet_cipher():
+    key_material = getattr(settings, 'SECRET_KEY', 'default-secret-key-smartpass').encode('utf-8')
+    derived = hashlib.sha256(key_material).digest()
+    b64_key = base64.urlsafe_b64encode(derived)
+    return Fernet(b64_key)
+
+def encrypt_value(plaintext):
+    if not plaintext:
+        return ''
+    if str(plaintext).startswith('gAAAAA'):
+        return str(plaintext)
+    try:
+        cipher = get_fernet_cipher()
+        return cipher.encrypt(str(plaintext).encode('utf-8')).decode('utf-8')
+    except Exception:
+        return str(plaintext)
+
+def decrypt_value(ciphertext):
+    if not ciphertext:
+        return ''
+    if not str(ciphertext).startswith('gAAAAA'):
+        return str(ciphertext)
+    try:
+        cipher = get_fernet_cipher()
+        return cipher.decrypt(str(ciphertext).encode('utf-8')).decode('utf-8')
+    except (InvalidToken, Exception):
+        return str(ciphertext)
+
+class EncryptedCharField(models.CharField):
+    """
+    Transparently encrypts sensitive values before saving to the database,
+    and decrypts them on model load. Seamlessly handles legacy plaintext values.
+    """
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('max_length', 500)
+        super().__init__(*args, **kwargs)
+
+    def from_db_value(self, value, expression, connection):
+        if value is None:
+            return value
+        return decrypt_value(value)
+
+    def to_python(self, value):
+        if isinstance(value, str):
+            return decrypt_value(value)
+        return value
+
+    def get_prep_value(self, value):
+        value = super().get_prep_value(value)
+        if value is None:
+            return value
+        return encrypt_value(str(value))
 
 class Student(models.Model):
     unique_token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True, editable=False)
@@ -93,13 +150,13 @@ class EmailLog(models.Model):
 
 class SMTPSetting(models.Model):
     provider = models.CharField(max_length=50, default='brevo') # 'brevo', 'resend', or 'smtp'
-    resend_api_key = models.CharField(max_length=255, blank=True, default='')
-    brevo_api_key = models.CharField(max_length=255, blank=True, default='')
+    resend_api_key = EncryptedCharField(max_length=500, blank=True, default='')
+    brevo_api_key = EncryptedCharField(max_length=500, blank=True, default='')
     host = models.CharField(max_length=255, default='smtp.gmail.com')
     port = models.IntegerField(default=587)
     use_tls = models.BooleanField(default=True)
     user = models.CharField(max_length=255, blank=True, default='')
-    password = models.CharField(max_length=255, blank=True, default='')
+    password = EncryptedCharField(max_length=500, blank=True, default='')
     from_name = models.CharField(max_length=255, default='Campus Attendance System')
     from_email = models.CharField(max_length=255, default='onboarding@resend.dev')
     is_active = models.BooleanField(default=False)
