@@ -443,14 +443,13 @@ export default function StudentManager({ initialEventFilter }) {
               <th>Email Address</th>
               <th>Branch / Dept</th>
               <th>Year & Sec</th>
-              <th>Enrolled Events</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading && students.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                     <div style={{
                       width: '36px',
@@ -471,7 +470,7 @@ export default function StudentManager({ initialEventFilter }) {
               </tr>
             ) : students.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
                   {eventFilter ? (
                     <div>
                       <Calendar size={36} color="var(--primary)" style={{ opacity: 0.7, margin: '0 auto 8px' }} />
@@ -502,42 +501,6 @@ export default function StudentManager({ initialEventFilter }) {
                     <span className="badge badge-info">{student.branch}</span>
                   </td>
                   <td>Year {student.year} - Sec {student.section}</td>
-                  <td>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
-                      {(!student.enrolled_events || student.enrolled_events.length === 0) ? (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>None (General Pool)</span>
-                      ) : (
-                        student.enrolled_events.map(ev => (
-                          <span
-                            key={ev.id}
-                            className="badge badge-primary"
-                            style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}
-                            title={`Registered in ${ev.title}`}
-                          >
-                            🎯 {ev.title}
-                            <button
-                              type="button"
-                              onClick={() => handleUnenrollStudent(student.id, ev.id, ev.title, student.name)}
-                              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 2px', lineHeight: 1, opacity: 0.8 }}
-                              title="Unenroll from this event"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))
-                      )}
-
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: '2px 6px', fontSize: '0.7rem', height: '22px' }}
-                        onClick={() => handleOpenEnrollModal(student)}
-                        title="Enroll into another Event"
-                      >
-                        + Enroll
-                      </button>
-                    </div>
-                  </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '6px' }}>
                       <button
@@ -546,14 +509,6 @@ export default function StudentManager({ initialEventFilter }) {
                         title="View / Download QR Pass"
                       >
                         <QrCode size={14} /> View
-                      </button>
-
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => handleResendEmail(student.id, student.name)}
-                        title="Send / Resend Email with QR Code"
-                      >
-                        <Mail size={14} /> Email
                       </button>
 
                       <button
