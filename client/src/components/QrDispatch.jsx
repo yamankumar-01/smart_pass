@@ -65,12 +65,20 @@ export default function QrDispatch({ selectedEventForDispatch, onNavigateToStude
       try {
         localStorage.setItem('cached_events_list', JSON.stringify(data));
       } catch (e) {}
-      if (data.length > 0 && !selectedEventId) {
-        const defaultId = selectedEventForDispatch ? String(selectedEventForDispatch.id) : String(data[0].id);
-        setSelectedEventId(defaultId);
-        try {
-          localStorage.setItem('smartpass_selected_event_id', defaultId);
-        } catch (e) {}
+      if (data.length > 0) {
+        const eventExists = data.some(e => String(e.id) === String(selectedEventId));
+        if (!selectedEventId || !eventExists) {
+          const defaultId = (selectedEventForDispatch && data.some(e => String(e.id) === String(selectedEventForDispatch.id)))
+            ? String(selectedEventForDispatch.id)
+            : String(data[0].id);
+          setSelectedEventId(defaultId);
+          try {
+            localStorage.setItem('smartpass_selected_event_id', defaultId);
+          } catch (e) {}
+        }
+      } else {
+        setSelectedEventId('');
+        setPasses([]);
       }
     } catch (err) {
       console.error('Failed to load events:', err);
