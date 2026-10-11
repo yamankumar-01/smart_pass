@@ -14,10 +14,10 @@ from django.contrib.auth.models import User
 # 1. Admin user (superuser) - username: yamankumar
 admin_user = User.objects.filter(username='yamankumar').first()
 if not admin_user:
-    User.objects.create_superuser(username='yamankumar', email='yamankumarkne2026@gmail.com', password='src@2019')
+    User.objects.create_superuser(username='yamankumar', email='yamankumarkne2019@gmail.com', password='src@2019')
     print('==> Created admin superuser: yamankumar')
 else:
-    admin_user.email = 'yamankumarkne2026@gmail.com'
+    admin_user.email = 'yamankumarkne2019@gmail.com'
     admin_user.set_password('src@2019')
     admin_user.is_staff = True
     admin_user.is_superuser = True
