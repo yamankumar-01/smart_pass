@@ -17,7 +17,7 @@ export default function Navbar({ activeTab, setActiveTab, userRole, onLogout }) 
   ];
 
   const visibleNavItems = allNavItems.filter((item) => item.roles.includes(userRole));
-  const currentUsername = sessionStorage.getItem('username') || (userRole === 'admin' ? 'adminpass' : 'smartpass');
+  const currentUsername = sessionStorage.getItem('username') || (userRole === 'admin' ? 'yamankumar' : 'userscan');
   const isAdmin = userRole === 'admin';
 
   const handleSelectTab = (id) => {

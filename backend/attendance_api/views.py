@@ -50,7 +50,7 @@ def custom_token_obtain_pair_view(request):
         return Response({'detail': 'User account is disabled.'}, status=status.HTTP_401_UNAUTHORIZED)
 
     refresh = RefreshToken.for_user(user)
-    is_admin = bool(user.is_superuser or user.is_staff or user.username.lower() in ('adminpass', 'admin'))
+    is_admin = bool(user.is_superuser or user.is_staff or user.username.lower() in ('yamankumar', 'admin'))
     role = 'admin' if is_admin else 'volunteer'
 
     return Response({
@@ -64,7 +64,7 @@ def custom_token_obtain_pair_view(request):
 @permission_classes([AllowAny])
 def current_user_view(request):
     if request.user and request.user.is_authenticated:
-        is_admin = bool(request.user.is_superuser or request.user.is_staff or request.user.username.lower() in ('adminpass', 'admin'))
+        is_admin = bool(request.user.is_superuser or request.user.is_staff or request.user.username.lower() in ('yamankumar', 'admin'))
         return Response({
             'username': request.user.username,
             'email': request.user.email,
@@ -78,7 +78,7 @@ from rest_framework.permissions import BasePermission
 
 class IsAdminUserRole(BasePermission):
     """
-    Allows access only to authenticated admin users (superusers, staff, or username 'admin'/'adminpass').
+    Allows access only to authenticated admin users (superusers, staff, or username 'admin'/'yamankumar').
     """
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
@@ -86,7 +86,7 @@ class IsAdminUserRole(BasePermission):
         return bool(
             request.user.is_superuser or
             request.user.is_staff or
-            request.user.username.lower() in ('admin', 'adminpass')
+            request.user.username.lower() in ('admin', 'yamankumar')
         )
 
 class IsVolunteerOrAdmin(BasePermission):

@@ -19,7 +19,7 @@ export default function App() {
     const savedRole = sessionStorage.getItem('role');
     if (savedRole) return savedRole;
     const user = (sessionStorage.getItem('username') || '').toLowerCase();
-    return (user === 'adminpass' || user === 'admin') ? 'admin' : 'volunteer';
+    return (user === 'yamankumar' || user === 'admin') ? 'admin' : 'volunteer';
   });
   
   // Persist active tab across browser reloads with role-protection & clean HTML5 paths (No '#')
@@ -39,7 +39,7 @@ export default function App() {
   };
 
   const getInitialTab = () => {
-    const savedRole = sessionStorage.getItem('role') || ((sessionStorage.getItem('username') || '').toLowerCase() === 'adminpass' ? 'admin' : 'volunteer');
+    const savedRole = sessionStorage.getItem('role') || ((sessionStorage.getItem('username') || '').toLowerCase() === 'yamankumar' ? 'admin' : 'volunteer');
 
     // 1. Check clean pathname first (e.g. /students or /student)
     const pathCandidate = window.location.pathname.replace(/^\/+/, '');
@@ -188,7 +188,7 @@ export default function App() {
   }, []);
 
   const handleLoginSuccess = (detectedRole) => {
-    const finalRole = detectedRole || (sessionStorage.getItem('username') === 'adminpass' || sessionStorage.getItem('username') === 'admin' ? 'admin' : 'volunteer');
+    const finalRole = detectedRole || (sessionStorage.getItem('username') === 'yamankumar' || sessionStorage.getItem('username') === 'admin' ? 'admin' : 'volunteer');
     setUserRole(finalRole);
     setIsAuthenticated(true);
     setActiveTabState('scanner');

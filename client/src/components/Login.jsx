@@ -26,7 +26,7 @@ export default function Login({ onLoginSuccess, onClose, isModal = false }) {
     try {
       const res = await api.post('/token/', { username: cleanUser, password: cleanPass });
       if (res.data.access) {
-        const userRole = res.data.role || (cleanUser.toLowerCase() === 'adminpass' || cleanUser.toLowerCase() === 'admin' ? 'admin' : 'volunteer');
+        const userRole = res.data.role || (cleanUser.toLowerCase() === 'yamankumar' || cleanUser.toLowerCase() === 'admin' ? 'admin' : 'volunteer');
         const finalUsername = res.data.username || cleanUser;
 
         sessionStorage.setItem('accessToken', res.data.access);
