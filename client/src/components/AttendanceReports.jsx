@@ -167,12 +167,17 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
       try {
         localStorage.setItem('cached_events_list', JSON.stringify(data));
       } catch (e) {}
-      if (data.length > 0 && !selectedEventId) {
-        if (selectedEventForReport) {
-          setSelectedEventId(selectedEventForReport.id);
-        } else {
-          setSelectedEventId(data[0].id);
+      if (data.length > 0) {
+        if (!selectedEventId || !data.some(e => String(e.id) === String(selectedEventId))) {
+          const defaultEvent = selectedEventForReport || data[0];
+          setSelectedEventId(String(defaultEvent.id));
         }
+      } else {
+        setSelectedEventId('');
+        setMatrixData(null);
+        try {
+          localStorage.removeItem('smartpass_selected_event_id');
+        } catch (e) {}
       }
     } catch (err) {
       console.error('Failed to load events:', err);
@@ -499,7 +504,15 @@ export default function AttendanceReports({ activeSession, selectedEventForRepor
             </div>
           </div>
 
-          {matrixLoading && (!matrixData || !matrixData.matrix || matrixData.matrix.length === 0) ? (
+          {events.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+              <Layers size={48} color="var(--primary)" style={{ margin: '0 auto 1rem', opacity: 0.8 }} />
+              <h3 style={{ margin: 0, color: 'var(--text-main)' }}>No Events Created Yet</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '6px' }}>
+                Go to the <strong>Events & Days</strong> tab to create an event and add lecture sessions.
+              </p>
+            </div>
+          ) : matrixLoading && (!matrixData || !matrixData.matrix || matrixData.matrix.length === 0) ? (
             <div className="card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                 <RefreshCw size={32} className="spin" color="var(--primary)" />
