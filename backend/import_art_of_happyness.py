@@ -303,7 +303,7 @@ def run():
             'email': email,
             'branch': branch,
             'year': year,
-            'section': section or 'A'
+            'section': section
         })
 
     for row in parsed_rows:
@@ -324,6 +324,11 @@ def run():
                 year=row['year'],
                 section=row['section']
             ))
+
+    if students_to_update:
+        print(f"Bulk updating sections for {len(students_to_update)} students...")
+        Student.objects.bulk_update(students_to_update, ['section', 'branch', 'year'], batch_size=100)
+        print("Updated student sections.")
 
     if new_students_to_create:
         print(f"Bulk creating {len(new_students_to_create)} new students...")
