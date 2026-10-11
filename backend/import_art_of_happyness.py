@@ -250,8 +250,7 @@ def deduce_year(sem):
     return '2'
 
 def run():
-    # 1. Create or get Event "Art of Happyness"
-    event, created = Event.objects.get_or_create(
+    event, _ = Event.objects.get_or_create(
         title="Art of Happyness",
         defaults={
             'description': 'Art of Happyness Event',
@@ -260,10 +259,8 @@ def run():
             'is_active': True
         }
     )
-    print(f"Event: {event.title} (ID: {event.id}), Created: {created}")
 
-    # 2. Create Day 1 Session if not exists
-    session, s_created = AttendanceSession.objects.get_or_create(
+    AttendanceSession.objects.get_or_create(
         event=event,
         day_label="Day 1",
         defaults={
@@ -272,65 +269,87 @@ def run():
             'is_active': True
         }
     )
-    print(f"Session: {session.title} (ID: {session.id}), Created: {s_created}")
 
-    # 3. Parse CSV rows
     lines = [line.strip() for line in RAW_CSV.strip().split('\n') if line.strip()]
-    header = lines[0]
     data_lines = lines[1:]
 
-    added_students = 0
-    updated_students = 0
-    passes_created = 0
+    # Pre-fetch existing students and passes for this event in 1 query each
+    existing_students = {s.email.lower(): s for s in Student.objects.all()}
+    existing_passes = set(EventPass.objects.filter(event=event).values_list('student_id', flat=True))
 
+    new_students_to_create = []
+    students_to_update = []
+    seen_emails_in_csv = set()
+
+    parsed_rows = []
     for line in data_lines:
         parts = [p.strip() for p in line.split(',')]
         if len(parts) < 3:
             continue
         name = parts[0]
         roll_no = parts[1]
-        email = parts[2].replace(' ', '').replace('.ac in', '.ac.in')
+        email = parts[2].replace(' ', '').replace('.ac in', '.ac.in').lower()
         sem = parts[3] if len(parts) > 3 else '3rd'
         section = parts[4] if len(parts) > 4 else ''
 
-        if not name or not email or '@' not in email:
+        if not name or not email or '@' not in email or email in seen_emails_in_csv:
             continue
+        seen_emails_in_csv.add(email)
 
         branch = deduce_branch(roll_no, email)
         year = deduce_year(sem)
+        parsed_rows.append({
+            'name': name.title(),
+            'email': email,
+            'branch': branch,
+            'year': year,
+            'section': section or 'A'
+        })
 
-        student, s_new = Student.objects.get_or_create(
-            email=email,
-            defaults={
-                'name': name.title(),
-                'branch': branch,
-                'year': year,
-                'section': section or 'A'
-            }
-        )
-        if s_new:
-            added_students += 1
+    for row in parsed_rows:
+        em = row['email']
+        if em in existing_students:
+            s = existing_students[em]
+            s.name = row['name']
+            s.branch = row['branch']
+            s.year = row['year']
+            s.section = row['section']
+            students_to_update.append(s)
         else:
-            # Update info
-            student.name = name.title()
-            student.branch = branch
-            student.year = year
-            if section:
-                student.section = section
-            student.save()
-            updated_students += 1
+            new_students_to_create.append(Student(
+                unique_token=uuid.uuid4(),
+                name=row['name'],
+                email=row['email'],
+                branch=row['branch'],
+                year=row['year'],
+                section=row['section']
+            ))
 
-        # Create EventPass
-        ep, ep_created = EventPass.objects.get_or_create(
-            event=event,
-            student=student
-        )
-        if ep_created:
-            passes_created += 1
+    if new_students_to_create:
+        print(f"Bulk creating {len(new_students_to_create)} new students...")
+        Student.objects.bulk_create(new_students_to_create, batch_size=100)
+        print("Created students.")
 
-    print(f"Summary: Added {added_students} new students, Updated {updated_students} students.")
-    print(f"Total Event Passes created for {event.title}: {passes_created}")
-    print(f"Total Enrolled in {event.title}: {event.passes.count()}")
+    # Re-fetch all students in parsed_rows to create EventPass
+    all_students_map = {s.email.lower(): s for s in Student.objects.filter(email__in=[r['email'] for r in parsed_rows])}
+
+    passes_to_create = []
+    for row in parsed_rows:
+        s = all_students_map.get(row['email'])
+        if s and s.id not in existing_passes:
+            passes_to_create.append(EventPass(
+                event=event,
+                student=s,
+                event_token=uuid.uuid4()
+            ))
+
+    if passes_to_create:
+        print(f"Bulk creating {len(passes_to_create)} event passes...")
+        EventPass.objects.bulk_create(passes_to_create, batch_size=100)
+        print("Created event passes.")
+
+    total_enrolled = EventPass.objects.filter(event=event).count()
+    print(f"SUCCESS! Total enrolled in '{event.title}': {total_enrolled}")
 
 if __name__ == '__main__':
     run()
