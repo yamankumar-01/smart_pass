@@ -256,6 +256,19 @@ export default function Scanner({ activeSession, setActiveSession }) {
             sessionStats: initialSess ? { present: initialSess.present_count || 0, total: initialSess.total_students || 0 } : { present: 0, total: 0 }
           }));
         } catch (e) {}
+      } else {
+        setSelectedEventId('');
+        setActiveSession(null);
+        setSessionStats({ present: 0, total: 0 });
+        try {
+          localStorage.removeItem(SCANNER_CACHE_KEY);
+          sessionStorage.removeItem(SCANNER_CACHE_KEY);
+          sessionStorage.removeItem('selected_session_id');
+          sessionStorage.removeItem('smartpass_selected_event_id');
+          localStorage.removeItem('smartpass_selected_event_id');
+          localStorage.removeItem('smartpass_active_session');
+          sessionStorage.removeItem('smartpass_active_session');
+        } catch (e) {}
       }
     } catch (err) {
       console.error('Failed to load events:', err);
@@ -952,7 +965,7 @@ export default function Scanner({ activeSession, setActiveSession }) {
                   Present Students
                 </div>
                 <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success)', lineHeight: 1.1 }}>
-                  {sessionStats.present} <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-muted)' }}>/ {sessionStats.total}</span>
+                  {(currentEvent && activeSession) ? sessionStats.present : 0} <span style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-muted)' }}>/ {(currentEvent && activeSession) ? sessionStats.total : 0}</span>
                 </div>
               </div>
             </div>
@@ -961,35 +974,59 @@ export default function Scanner({ activeSession, setActiveSession }) {
       </div>
 
       {/* Prominent Current Target Banner for Scanner */}
-      <div style={{
-        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(129, 140, 248, 0.15))',
-        border: '1.5px solid rgba(99, 102, 241, 0.35)',
-        borderRadius: '12px',
-        padding: '10px 16px',
-        marginBottom: '1.25rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '10px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '1.25rem' }}>🎯</span>
-          <div>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Currently Scanning For:
+      {(currentEvent && activeSession) ? (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(129, 140, 248, 0.15))',
+          border: '1.5px solid rgba(99, 102, 241, 0.35)',
+          borderRadius: '12px',
+          padding: '10px 16px',
+          marginBottom: '1.25rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '10px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.25rem' }}>🎯</span>
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Currently Scanning For:
+              </div>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                {currentEvent.title} — <span style={{ color: 'var(--primary)' }}>{activeSession.day_label || activeSession.title || 'Day 1'}</span>
+              </div>
             </div>
-            <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              {currentEvent?.title || 'No Event'} — <span style={{ color: 'var(--primary)' }}>{activeSession?.day_label || activeSession?.title || 'No Day Selected'}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, background: 'var(--bg-card)', padding: '5px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              Present: <strong style={{ color: 'var(--success)' }}>{sessionStats.present}</strong> / {sessionStats.total}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.08)',
+          border: '1.5px dashed rgba(239, 68, 68, 0.3)',
+          borderRadius: '12px',
+          padding: '12px 16px',
+          marginBottom: '1.25rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          color: 'var(--text-muted)'
+        }}>
+          <span style={{ fontSize: '1.3rem' }}>⚠️</span>
+          <div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)' }}>
+              No Active Event or Day Selected
+            </div>
+            <div style={{ fontSize: '0.8rem' }}>
+              Please select or create an event in the <strong>Events & Days</strong> tab before scanning attendance.
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '0.82rem', fontWeight: 700, background: 'var(--bg-card)', padding: '5px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-            Present: <strong style={{ color: 'var(--success)' }}>{sessionStats.present}</strong> / {sessionStats.total}
-          </span>
-        </div>
-      </div>
+      )}
 
       {/* Camera QR Scanner Card */}
       <div className="card" style={{ marginBottom: '1.25rem', overflow: 'hidden' }}>

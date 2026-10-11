@@ -158,6 +158,18 @@ export default function App() {
             try {
               localStorage.setItem('cached_events_list', JSON.stringify(res.data));
             } catch (e) {}
+          } else if (Array.isArray(res.data) && res.data.length === 0) {
+            try {
+              localStorage.removeItem('cached_events_list');
+              localStorage.removeItem('smartpass_scanner_state');
+              localStorage.removeItem('smartpass_active_session');
+              sessionStorage.removeItem('smartpass_active_session');
+              localStorage.removeItem('selected_session_id');
+              sessionStorage.removeItem('selected_session_id');
+              localStorage.removeItem('smartpass_selected_event_id');
+              sessionStorage.removeItem('smartpass_selected_event_id');
+            } catch (e) {}
+            setActiveSession(null);
           }
         })
         .catch(() => {});
