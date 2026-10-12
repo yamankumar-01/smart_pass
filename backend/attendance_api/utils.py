@@ -330,14 +330,24 @@ def send_student_qr_email(student, conn=None, from_addr=None, specific_sender=No
           </p>
         </div>
 
-        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
-          <h3 style="margin: 0 0 12px 0; color: #334155; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Student Profile:</h3>
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
-            <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Full Name:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
-            <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
-            <tr><td style="padding: 5px 0; color: #64748b;">Branch:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch}</td></tr>
-            <tr><td style="padding: 5px 0; color: #64748b;">Year & Section:</td><td style="padding: 5px 0; font-weight: 600;">Year {student.year} - Section {student.section}</td></tr>
-            <tr><td style="padding: 5px 0; color: #64748b;">Pass Token (UUID):</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px; margin: 0 0 24px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 13.5px; width: 100%;">
+            <tr>
+              <td style="padding: 7px 0; color: #64748b; font-weight: 500; width: 110px; vertical-align: top;">Attendee:</td>
+              <td style="padding: 7px 0 7px 12px; font-weight: 700; color: #0f172a; text-align: right; vertical-align: top;">{student.name}</td>
+            </tr>
+            <tr style="border-top: 1px solid #edf2f7;">
+              <td style="padding: 7px 0; color: #64748b; font-weight: 500; width: 110px; vertical-align: top;">Email:</td>
+              <td style="padding: 7px 0 7px 12px; font-weight: 600; color: #0f172a; text-align: right; word-break: break-all; vertical-align: top;">{student.email}</td>
+            </tr>
+            <tr style="border-top: 1px solid #edf2f7;">
+              <td style="padding: 7px 0; color: #64748b; font-weight: 500; width: 110px; vertical-align: top;">Branch / Year:</td>
+              <td style="padding: 7px 0 7px 12px; font-weight: 600; color: #0f172a; text-align: right; vertical-align: top;">{student.branch} (Year {student.year}{f' - Sec {student.section}' if student.section and str(student.section).strip() else ''})</td>
+            </tr>
+            <tr style="border-top: 1px solid #edf2f7;">
+              <td style="padding: 7px 0; color: #64748b; font-weight: 500; width: 110px; vertical-align: top;">Pass Token:</td>
+              <td style="padding: 7px 0 7px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; font-weight: 700; color: #4f46e5; text-align: right; word-break: break-all; vertical-align: top;">{token_str}</td>
+            </tr>
           </table>
         </div>
 
@@ -470,15 +480,21 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None, specific_sender=N
 
     subject = f"🎟️ Event Pass & QR Code - {event.title} - {student.name}"
 
-    scheduled_days_html = ""
-    for s in event.sessions.all().order_by('date', 'id'):
-        scheduled_days_html += f"""
-        <tr style="border-bottom: 1px solid #e2e8f0;">
-          <td style="padding: 8px 10px; font-weight: 700; color: #4f46e5;">{s.day_label or 'Day'}</td>
-          <td style="padding: 8px 10px; color: #1e293b;">{s.topic or s.title}</td>
-          <td style="padding: 8px 10px; color: #64748b; font-size: 13px;">{s.date}</td>
-        </tr>
-        """
+    event_date_str = str(event.start_date)
+    if event.end_date and event.end_date != event.start_date:
+        event_date_str += f" to {event.end_date}"
+
+    class_items = []
+    if student.branch:
+        class_items.append(student.branch.strip())
+    sec_parts = []
+    if student.year:
+        sec_parts.append(f"Year {str(student.year).strip()}")
+    if student.section and str(student.section).strip():
+        sec_parts.append(f"Sec {str(student.section).strip()}")
+    if sec_parts:
+        class_items.append(f"({', '.join(sec_parts)})")
+    class_info = " ".join(class_items) or "Student"
 
     html_body = f"""
     <div style="font-family: Arial, Helvetica, sans-serif; max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
@@ -487,7 +503,7 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None, specific_sender=N
           OFFICIAL EVENT PASS
         </div>
         <h1 style="margin: 6px 0 2px 0; font-size: 24px; font-weight: 800; color: #ffffff;">{event.title}</h1>
-        <p style="margin: 0; opacity: 0.9; font-size: 13px; color: #ffffff;">📅 {event.start_date} to {event.end_date}</p>
+        <p style="margin: 0; opacity: 0.9; font-size: 13px; color: #ffffff;">📅 {event_date_str}</p>
       </div>
 
       <div style="padding: 24px 20px; background-color: #ffffff;">
@@ -498,33 +514,36 @@ def send_event_qr_email(event_pass, conn=None, from_addr=None, specific_sender=N
 
         <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 6px; margin: 0 0 20px 0;">
           <p style="margin: 0; font-weight: 700; color: #065f46; font-size: 13px;">
-            📌 Reusable Pass: This single QR pass is valid for ALL lecture days of {event.title}.
+            📌 Reusable Pass: This single QR pass is valid for attendance check-in for {event.title}.
           </p>
         </div>
 
-        {f'''
-        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 0 0 20px 0;">
-          <h4 style="margin: 0 0 8px 0; color: #334155; font-size: 13px; text-transform: uppercase;">Event Scheduled Lectures / Days:</h4>
-          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-            {scheduled_days_html}
-          </table>
-        </div>
-        ''' if scheduled_days_html else ''}
-
-        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 24px 0;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
-            <tr><td style="padding: 5px 0; color: #64748b; width: 40%;">Attendee:</td><td style="padding: 5px 0; font-weight: 700;">{student.name}</td></tr>
-            <tr><td style="padding: 5px 0; color: #64748b;">Email:</td><td style="padding: 5px 0; font-weight: 600;">{student.email}</td></tr>
-            <tr><td style="padding: 5px 0; color: #64748b;">Branch / Year:</td><td style="padding: 5px 0; font-weight: 600;">{student.branch} (Year {student.year} - Sec {student.section})</td></tr>
-            <tr><td style="padding: 5px 0; color: #64748b;">Event Pass Token:</td><td style="padding: 5px 0; font-family: monospace; font-weight: 700; color: #4f46e5; word-break: break-all;">{token_str}</td></tr>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px; margin: 0 0 24px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 13.5px; width: 100%;">
+            <tr>
+              <td style="padding: 7px 0; color: #64748b; font-weight: 500; width: 110px; vertical-align: top;">Attendee:</td>
+              <td style="padding: 7px 0 7px 12px; font-weight: 700; color: #0f172a; text-align: right; vertical-align: top;">{student.name}</td>
+            </tr>
+            <tr style="border-top: 1px solid #edf2f7;">
+              <td style="padding: 7px 0; color: #64748b; font-weight: 500; width: 110px; vertical-align: top;">Email:</td>
+              <td style="padding: 7px 0 7px 12px; font-weight: 600; color: #0f172a; text-align: right; word-break: break-all; vertical-align: top;">{student.email}</td>
+            </tr>
+            <tr style="border-top: 1px solid #edf2f7;">
+              <td style="padding: 7px 0; color: #64748b; font-weight: 500; width: 110px; vertical-align: top;">Branch / Year:</td>
+              <td style="padding: 7px 0 7px 12px; font-weight: 600; color: #0f172a; text-align: right; vertical-align: top;">{class_info}</td>
+            </tr>
+            <tr style="border-top: 1px solid #edf2f7;">
+              <td style="padding: 7px 0; color: #64748b; font-weight: 500; width: 110px; vertical-align: top;">Pass Token:</td>
+              <td style="padding: 7px 0 7px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; font-weight: 700; color: #4f46e5; text-align: right; word-break: break-all; vertical-align: top;">{token_str}</td>
+            </tr>
           </table>
         </div>
 
         <div style="text-align: center; margin: 24px 0;">
-          <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;">
+          <div style="display: inline-block; padding: 14px; background-color: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
             <img src="cid:qr_code_image" alt="Event QR Code" width="220" height="220" style="display: block; width: 220px; height: 220px; margin: 0 auto; border: 0;" />
           </div>
-          <p style="font-size: 13px; color: #64748b; margin: 10px 0 0 0; font-weight: 600;">
+          <p style="font-size: 13px; color: #64748b; margin: 12px 0 0 0; font-weight: 600;">
             Present this QR code during attendance check-in for this event.
           </p>
         </div>

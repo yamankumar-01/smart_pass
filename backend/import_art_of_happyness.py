@@ -251,9 +251,9 @@ def deduce_year(sem):
 
 def run():
     event, _ = Event.objects.get_or_create(
-        title="Art of Happyness",
+        title="Art of Happiness",
         defaults={
-            'description': 'Art of Happyness Event',
+            'description': 'Art of Happiness Event',
             'start_date': timezone.now().date(),
             'end_date': timezone.now().date(),
             'is_active': True
@@ -264,7 +264,7 @@ def run():
         event=event,
         day_label="Day 1",
         defaults={
-            'title': "Art of Happyness - Day 1",
+            'title': "Art of Happiness - Day 1",
             'date': timezone.now().date(),
             'is_active': True
         }
