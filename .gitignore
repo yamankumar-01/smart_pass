@@ -30,3 +30,7 @@ Thumbs.db
 *backup*.json
 *.xls
 *.xlsx
+*.db
+*.sqlite*
+server/attendance.db
+backend/sync_smtp_local.py
