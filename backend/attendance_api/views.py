@@ -174,15 +174,11 @@ class StudentViewSet(viewsets.ModelViewSet):
             student.qr_sent = False
             student.save(update_fields=['unique_token', 'qr_code_image', 'qr_sent'])
 
-            # Invalidate and regenerate all event passes for this student
+            # Invalidate and regenerate all event passes for this student and mark as pending
             for ep in EventPass.objects.filter(student=student):
                 ep.event_token = uuid.uuid4()
                 ep.qr_sent = False
                 ep.save(update_fields=['event_token', 'qr_sent'])
-                try:
-                    send_event_qr_email(ep)
-                except Exception as e:
-                    print(f"Auto-dispatch pass failed on email change: {e}")
 
     @action(detail=False, methods=['post'], url_path='enroll-event')
     def enroll_event(self, request):
