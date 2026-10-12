@@ -163,6 +163,27 @@ class StudentViewSet(viewsets.ModelViewSet):
                 pass
         send_student_qr_email(student)
 
+    def perform_update(self, serializer):
+        old_email = serializer.instance.email
+        student = serializer.save()
+        if old_email and student.email and old_email.strip().lower() != student.email.strip().lower():
+            # Invalidate and regenerate student main QR token
+            student.unique_token = uuid.uuid4()
+            file_content, _ = generate_qr_code(student.unique_token)
+            student.qr_code_image.save(f"qr_{student.unique_token}.png", file_content, save=False)
+            student.qr_sent = False
+            student.save(update_fields=['unique_token', 'qr_code_image', 'qr_sent'])
+
+            # Invalidate and regenerate all event passes for this student
+            for ep in EventPass.objects.filter(student=student):
+                ep.event_token = uuid.uuid4()
+                ep.qr_sent = False
+                ep.save(update_fields=['event_token', 'qr_sent'])
+                try:
+                    send_event_qr_email(ep)
+                except Exception as e:
+                    print(f"Auto-dispatch pass failed on email change: {e}")
+
     @action(detail=False, methods=['post'], url_path='enroll-event')
     def enroll_event(self, request):
         event_id = request.data.get('event_id')
