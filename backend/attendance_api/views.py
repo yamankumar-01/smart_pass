@@ -1022,6 +1022,11 @@ class EventViewSet(viewsets.ModelViewSet):
         if not pass_item:
             return Response({'error': 'Event pass record not found'}, status=status.HTTP_404_NOT_FOUND)
         log = send_event_qr_email(pass_item)
+        if log and log.status == 'FAILED':
+            return Response({
+                'error': f'Failed to send email to {pass_item.student.email}: {log.error_message}',
+                'status': 'FAILED'
+            }, status=status.HTTP_400_BAD_REQUEST)
         return Response({
             'message': f'QR Event Pass sent to {pass_item.student.email} ({pass_item.student.name})!',
             'status': log.status if log else 'SENT',
